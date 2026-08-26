@@ -6,12 +6,15 @@ import {
   agentCreateSchema,
   agentPasswordChangeSchema,
   agentSuspendSchema,
-  playerInviteRedeemSchema,
+  playerCredentialLoginSchema,
+  playerInviteActivateSchema,
   playerInviteRevokeSchema,
+  playerPasswordChangeSchema,
 } from "../accountSchemas";
 import { AGENT_SESSION_COOKIE, createAgentSession } from "../agentSession";
+import { PLAYER_SESSION_COOKIE, createPlayerSession } from "../playerSession";
 import { getSessionCookieOptions } from "../_core/cookies";
-import { adminProcedure, protectedProcedure, publicProcedure, router } from "../_core/trpc";
+import { adminProcedure, playerProcedure, protectedProcedure, publicProcedure, router } from "../_core/trpc";
 
 function requireRole(role: "agent" | "user", actualRole: "admin" | "agent" | "user") {
   if (actualRole !== role) {
@@ -24,13 +27,50 @@ function requireRole(role: "agent" | "user", actualRole: "admin" | "agent" | "us
 
 export const accountRouter = router({
   player: router({
-    me: protectedProcedure.query(async ({ ctx }) => {
-      requireRole("user", ctx.user.role);
-      return db.getPlayerProfile(ctx.user.id);
+    session: publicProcedure.query(async ({ ctx }) => {
+      return ctx.player ? db.getPlayerProfileById(ctx.player.id) : null;
     }),
-    activate: protectedProcedure.input(playerInviteRedeemSchema).mutation(async ({ ctx, input }) => {
-      requireRole("user", ctx.user.role);
-      return db.redeemPlayerInvitation(ctx.user.id, ctx.user.name ?? undefined, input.token);
+    me: playerProcedure.query(async ({ ctx }) => {
+      return db.getPlayerProfileById(ctx.player.id);
+    }),
+    activate: publicProcedure.input(playerInviteActivateSchema).mutation(async ({ ctx, input }) => {
+      try {
+        const activated = await db.activatePlayerInvitation(input.token, input.playerCode, input.password);
+        const token = await createPlayerSession(activated.playerProfileId);
+        ctx.res.cookie(PLAYER_SESSION_COOKIE, token, {
+          ...getSessionCookieOptions(ctx.req),
+          maxAge: 12 * 60 * 60 * 1000,
+        });
+        return { success: true as const, mustChangePassword: activated.mustChangePassword };
+      } catch {
+        throw new TRPCError({
+          code: "UNAUTHORIZED",
+          message: "Player link, Player ID, or password is incorrect, expired, or unavailable.",
+        });
+      }
+    }),
+    login: publicProcedure.input(playerCredentialLoginSchema).mutation(async ({ ctx, input }) => {
+      try {
+        const authenticated = await db.authenticatePlayerCredentials(input.playerCode, input.password);
+        const token = await createPlayerSession(authenticated.playerProfileId);
+        ctx.res.cookie(PLAYER_SESSION_COOKIE, token, {
+          ...getSessionCookieOptions(ctx.req),
+          maxAge: 12 * 60 * 60 * 1000,
+        });
+        return { success: true as const, mustChangePassword: authenticated.mustChangePassword };
+      } catch {
+        throw new TRPCError({
+          code: "UNAUTHORIZED",
+          message: "Player ID or password is incorrect, expired, or unavailable.",
+        });
+      }
+    }),
+    changePassword: playerProcedure.input(playerPasswordChangeSchema).mutation(async ({ ctx, input }) => {
+      return db.changePlayerPassword(ctx.player.id, input.newPassword);
+    }),
+    logout: publicProcedure.mutation(({ ctx }) => {
+      ctx.res.cookie(PLAYER_SESSION_COOKIE, "", { ...getSessionCookieOptions(ctx.req), maxAge: 0 });
+      return { success: true as const };
     }),
   }),
   agent: router({

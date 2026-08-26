@@ -129,23 +129,37 @@ export const agents = mysqlTable(
 );
 
 /**
- * Player profiles are created only when an Agent-issued Player invitation is
- * redeemed by an authenticated plain-user account. This table intentionally
- * stores no wallet, payment, or wagering data.
+ * Player profiles are provisioned only by active Agents. A Player signs in
+ * with this record's Player ID and password; no Manus identity is required.
+ * This table intentionally stores no wallet, payment, or wagering data.
  */
 export const playerProfiles = mysqlTable(
   "player_profiles",
   {
     id: int("id").autoincrement().primaryKey(),
-    userId: int("userId").notNull(),
+    // Retained for profiles created by the earlier Manus-based onboarding flow.
+    userId: int("userId"),
     agentId: int("agentId"),
+    invitationId: int("invitationId"),
     displayName: varchar("displayName", { length: 160 }),
-    status: mysqlEnum("status", ["active", "suspended"]).default("active").notNull(),
+    playerCode: varchar("playerCode", { length: 32 }),
+    passwordHash: varchar("passwordHash", { length: 255 }),
+    passwordSalt: varchar("passwordSalt", { length: 64 }),
+    mustChangePassword: boolean("mustChangePassword").default(true).notNull(),
+    temporaryPasswordExpiresAt: timestamp("temporaryPasswordExpiresAt"),
+    failedLoginCount: int("failedLoginCount").default(0).notNull(),
+    lockedUntil: timestamp("lockedUntil"),
+    credentialIssuedAt: timestamp("credentialIssuedAt"),
+    lastCredentialLoginAt: timestamp("lastCredentialLoginAt"),
+    activatedAt: timestamp("activatedAt"),
+    status: mysqlEnum("status", ["invited", "active", "suspended"]).default("invited").notNull(),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
     updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   },
   table => [
     uniqueIndex("player_profiles_user_id_unique").on(table.userId),
+    uniqueIndex("player_profiles_code_unique").on(table.playerCode),
+    uniqueIndex("player_profiles_invitation_id_unique").on(table.invitationId),
     index("player_profiles_status_created_index").on(table.status, table.createdAt),
     index("player_profiles_agent_created_index").on(table.agentId, table.createdAt),
   ],
@@ -160,9 +174,11 @@ export const playerInvitations = mysqlTable(
   {
     id: int("id").autoincrement().primaryKey(),
     agentId: int("agentId").notNull(),
+    playerProfileId: int("playerProfileId"),
     tokenHash: varchar("tokenHash", { length: 64 }).notNull(),
     status: mysqlEnum("status", ["issued", "redeemed", "revoked"]).default("issued").notNull(),
     expiresAt: timestamp("expiresAt").notNull(),
+    redeemedByPlayerProfileId: int("redeemedByPlayerProfileId"),
     redeemedByUserId: int("redeemedByUserId"),
     redeemedAt: timestamp("redeemedAt"),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -170,6 +186,7 @@ export const playerInvitations = mysqlTable(
   },
   table => [
     uniqueIndex("player_invitations_token_hash_unique").on(table.tokenHash),
+    uniqueIndex("player_invitations_profile_id_unique").on(table.playerProfileId),
     index("player_invitations_agent_status_created_index").on(table.agentId, table.status, table.createdAt),
     index("player_invitations_status_expires_index").on(table.status, table.expiresAt),
   ],

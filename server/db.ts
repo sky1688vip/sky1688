@@ -307,6 +307,7 @@ const temporaryPasswordLifetimeMs = 24 * 60 * 60 * 1000;
 const loginLockoutMs = 15 * 60 * 1000;
 const maxFailedLoginAttempts = 5;
 const playerInviteLifetimeMs = 72 * 60 * 60 * 1000;
+const playerTemporaryPasswordLifetimeMs = playerInviteLifetimeMs;
 
 function createTemporaryPassword() {
   return `SKY-${randomBytes(18).toString("base64url")}`;
@@ -473,22 +474,54 @@ export async function createPlayerInvitation(agentUserId: number) {
   const db = await requireDb();
   const agent = await requireActiveAgentForUser(agentUserId);
   const token = createPlayerInviteToken();
+  const playerCode = randomCode("PL", 4);
+  const temporaryPassword = createTemporaryPassword();
+  const password = createPasswordHash(temporaryPassword);
   const expiresAt = new Date(Date.now() + playerInviteLifetimeMs);
-  await db.insert(playerInvitations).values({
-    agentId: agent.id,
-    tokenHash: hashPlayerInviteToken(token),
-    status: "issued",
-    expiresAt,
+  const now = new Date();
+  await db.transaction(async tx => {
+    const tokenHash = hashPlayerInviteToken(token);
+    await tx.insert(playerInvitations).values({
+      agentId: agent.id,
+      tokenHash,
+      status: "issued",
+      expiresAt,
+    });
+    const invitation = await tx.select().from(playerInvitations).where(eq(playerInvitations.tokenHash, tokenHash)).limit(1);
+    if (!invitation[0]) throw new Error("PLAYER_INVITATION_CREATE_FAILED");
+    await tx.insert(playerProfiles).values({
+      agentId: agent.id,
+      invitationId: invitation[0].id,
+      playerCode,
+      passwordHash: password.hash,
+      passwordSalt: password.salt,
+      mustChangePassword: true,
+      temporaryPasswordExpiresAt: new Date(now.getTime() + playerTemporaryPasswordLifetimeMs),
+      failedLoginCount: 0,
+      credentialIssuedAt: now,
+      status: "invited",
+    });
+    const profile = await tx.select().from(playerProfiles).where(eq(playerProfiles.invitationId, invitation[0].id)).limit(1);
+    if (!profile[0]) throw new Error("PLAYER_PROFILE_CREATE_FAILED");
+    await tx.update(playerInvitations).set({ playerProfileId: profile[0].id }).where(eq(playerInvitations.id, invitation[0].id));
   });
-  return { success: true as const, token, expiresAt };
+  return { success: true as const, token, playerCode, temporaryPassword, expiresAt };
 }
 
 export async function listPlayerInvitationsForAgent(agentUserId: number) {
   const db = await requireDb();
   const agent = await requireActiveAgentForUser(agentUserId);
   return db
-    .select()
+    .select({
+      id: playerInvitations.id,
+      status: playerInvitations.status,
+      expiresAt: playerInvitations.expiresAt,
+      redeemedAt: playerInvitations.redeemedAt,
+      createdAt: playerInvitations.createdAt,
+      playerCode: playerProfiles.playerCode,
+    })
     .from(playerInvitations)
+    .leftJoin(playerProfiles, eq(playerInvitations.playerProfileId, playerProfiles.id))
     .where(eq(playerInvitations.agentId, agent.id))
     .orderBy(desc(playerInvitations.createdAt), desc(playerInvitations.id));
 }
@@ -496,28 +529,53 @@ export async function listPlayerInvitationsForAgent(agentUserId: number) {
 export async function revokePlayerInvitation(agentUserId: number, invitationId: number) {
   const db = await requireDb();
   const agent = await requireActiveAgentForUser(agentUserId);
-  await db
-    .update(playerInvitations)
-    .set({ status: "revoked" })
-    .where(and(
-      eq(playerInvitations.id, invitationId),
-      eq(playerInvitations.agentId, agent.id),
-      eq(playerInvitations.status, "issued"),
-    ));
+  await db.transaction(async tx => {
+    const invitations = await tx
+      .select()
+      .from(playerInvitations)
+      .where(and(
+        eq(playerInvitations.id, invitationId),
+        eq(playerInvitations.agentId, agent.id),
+        eq(playerInvitations.status, "issued"),
+      ))
+      .limit(1);
+    const invitation = invitations[0];
+    if (!invitation) return;
+    await tx.update(playerInvitations).set({ status: "revoked" }).where(eq(playerInvitations.id, invitation.id));
+    if (invitation.playerProfileId) {
+      await tx.update(playerProfiles).set({ status: "suspended" }).where(eq(playerProfiles.id, invitation.playerProfileId));
+    }
+  });
   return { success: true as const };
 }
 
-export async function redeemPlayerInvitation(userId: number, displayName: string | undefined, token: string) {
+async function validatePlayerPassword(profile: typeof playerProfiles.$inferSelect, password: string, now: Date) {
+  if (!profile.playerCode || !profile.passwordHash || !profile.passwordSalt || profile.status === "suspended") {
+    throw new Error("INVALID_PLAYER_CREDENTIALS");
+  }
+  if (profile.lockedUntil && profile.lockedUntil > now) throw new Error("PLAYER_CREDENTIALS_LOCKED");
+  if (profile.mustChangePassword && profile.temporaryPasswordExpiresAt && profile.temporaryPasswordExpiresAt <= now) {
+    throw new Error("PLAYER_TEMPORARY_PASSWORD_EXPIRED");
+  }
+  if (!passwordMatches(password, profile.passwordSalt, profile.passwordHash)) {
+    const failedLoginCount = profile.failedLoginCount + 1;
+    const db = await requireDb();
+    await db.update(playerProfiles).set({
+      failedLoginCount,
+      lockedUntil: failedLoginCount >= maxFailedLoginAttempts ? new Date(now.getTime() + loginLockoutMs) : null,
+    }).where(eq(playerProfiles.id, profile.id));
+    throw new Error("INVALID_PLAYER_CREDENTIALS");
+  }
+}
+
+export async function activatePlayerInvitation(token: string, playerCode: string, password: string) {
   const db = await requireDb();
   const tokenHash = hashPlayerInviteToken(token);
   const now = new Date();
   return db.transaction(async tx => {
-    const existing = await tx.select().from(playerProfiles).where(eq(playerProfiles.userId, userId)).limit(1);
-    if (existing[0]) return existing[0];
-
     const invitations = await tx.select().from(playerInvitations).where(eq(playerInvitations.tokenHash, tokenHash)).limit(1);
     const invitation = invitations[0];
-    if (!invitation || invitation.status !== "issued" || invitation.expiresAt <= now) {
+    if (!invitation || invitation.status !== "issued" || invitation.expiresAt <= now || !invitation.playerProfileId) {
       throw new Error("PLAYER_INVITATION_INVALID");
     }
 
@@ -526,29 +584,71 @@ export async function redeemPlayerInvitation(userId: number, displayName: string
       throw new Error("PLAYER_INVITATION_UNAVAILABLE");
     }
 
+    const profiles = await tx.select().from(playerProfiles).where(eq(playerProfiles.id, invitation.playerProfileId)).limit(1);
+    const profile = profiles[0];
+    if (!profile || profile.status !== "invited" || profile.playerCode !== playerCode) {
+      throw new Error("PLAYER_INVITATION_CREDENTIAL_MISMATCH");
+    }
+    await validatePlayerPassword(profile, password, now);
+
     await tx
       .update(playerInvitations)
-      .set({ status: "redeemed", redeemedByUserId: userId, redeemedAt: now })
+      .set({ status: "redeemed", redeemedByPlayerProfileId: profile.id, redeemedAt: now })
       .where(and(eq(playerInvitations.id, invitation.id), eq(playerInvitations.status, "issued")));
 
     const consumed = await tx.select().from(playerInvitations).where(eq(playerInvitations.id, invitation.id)).limit(1);
-    if (consumed[0]?.status !== "redeemed" || consumed[0]?.redeemedByUserId !== userId) {
+    if (consumed[0]?.status !== "redeemed" || consumed[0]?.redeemedByPlayerProfileId !== profile.id) {
       throw new Error("PLAYER_INVITATION_ALREADY_USED");
     }
 
-    await tx.insert(playerProfiles).values({
-      userId,
-      agentId: invitation.agentId,
-      displayName: displayName ?? null,
+    await tx.update(playerProfiles).set({
       status: "active",
-    });
-    const created = await tx.select().from(playerProfiles).where(eq(playerProfiles.userId, userId)).limit(1);
-    return created[0] ?? null;
+      failedLoginCount: 0,
+      lockedUntil: null,
+      activatedAt: profile.activatedAt ?? now,
+      lastCredentialLoginAt: now,
+    }).where(eq(playerProfiles.id, profile.id));
+    return { playerProfileId: profile.id, mustChangePassword: profile.mustChangePassword };
   });
 }
 
-export async function getPlayerProfile(userId: number) {
+export async function authenticatePlayerCredentials(playerCode: string, password: string) {
   const db = await requireDb();
-  const rows = await db.select().from(playerProfiles).where(eq(playerProfiles.userId, userId)).limit(1);
+  const rows = await db
+    .select()
+    .from(playerProfiles)
+    .where(eq(playerProfiles.playerCode, playerCode.trim().toUpperCase()))
+    .limit(1);
+  const profile = rows[0];
+  const now = new Date();
+  if (!profile || profile.status !== "active") throw new Error("INVALID_PLAYER_CREDENTIALS");
+  await validatePlayerPassword(profile, password, now);
+  await db.update(playerProfiles).set({
+    failedLoginCount: 0,
+    lockedUntil: null,
+    lastCredentialLoginAt: now,
+  }).where(eq(playerProfiles.id, profile.id));
+  return { playerProfileId: profile.id, mustChangePassword: profile.mustChangePassword };
+}
+
+export async function changePlayerPassword(playerProfileId: number, newPassword: string) {
+  const db = await requireDb();
+  const profile = await getPlayerProfileById(playerProfileId);
+  if (!profile || profile.status !== "active") throw new Error("PLAYER_ACCOUNT_UNAVAILABLE");
+  const password = createPasswordHash(newPassword);
+  await db.update(playerProfiles).set({
+    passwordHash: password.hash,
+    passwordSalt: password.salt,
+    mustChangePassword: false,
+    temporaryPasswordExpiresAt: null,
+    failedLoginCount: 0,
+    lockedUntil: null,
+  }).where(eq(playerProfiles.id, playerProfileId));
+  return { success: true as const };
+}
+
+export async function getPlayerProfileById(playerProfileId: number) {
+  const db = await requireDb();
+  const rows = await db.select().from(playerProfiles).where(eq(playerProfiles.id, playerProfileId)).limit(1);
   return rows[0] ?? null;
 }

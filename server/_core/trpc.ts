@@ -27,6 +27,21 @@ const requireUser = t.middleware(async opts => {
 
 export const protectedProcedure = t.procedure.use(requireUser);
 
+const requirePlayer = t.middleware(async opts => {
+  const { ctx, next } = opts;
+  if (!ctx.player || ctx.player.status !== "active") {
+    throw new TRPCError({ code: "UNAUTHORIZED", message: "Player account access is required." });
+  }
+  return next({
+    ctx: {
+      ...ctx,
+      player: ctx.player,
+    },
+  });
+});
+
+export const playerProcedure = t.procedure.use(requirePlayer);
+
 export const adminProcedure = t.procedure.use(
   t.middleware(async opts => {
     const { ctx, next } = opts;

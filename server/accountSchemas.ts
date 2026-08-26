@@ -39,8 +39,19 @@ export const agentCredentialResetSchema = z.object({
   id: z.number().int().positive(),
 });
 
-export const playerInviteRedeemSchema = z.object({
+export const playerInviteActivateSchema = z.object({
   token: z.string().trim().min(32).max(128),
+  playerCode: z.string().trim().min(6).max(40).transform(value => value.toUpperCase()),
+  password: z.string().min(12).max(128),
+});
+
+export const playerCredentialLoginSchema = z.object({
+  playerCode: z.string().trim().min(6).max(40).transform(value => value.toUpperCase()),
+  password: z.string().min(12).max(128),
+});
+
+export const playerPasswordChangeSchema = z.object({
+  newPassword: z.string().min(12, "Password must have at least 12 characters.").max(128),
 });
 
 export const playerInviteRevokeSchema = z.object({
