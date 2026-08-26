@@ -53,3 +53,7 @@
 - [x] Replace Manus-based Player activation with Agent-issued Player ID and temporary-password credentials, an Agent-issued invitation link, and a dedicated Player sign-in session.
 - [x] Redesign the Agent console as a responsive sidebar dashboard with Player summary metrics, account issuance, invitation status, and no payment, wallet, transfer, or wagering controls.
 - [x] Add the complete reference-inspired Agent sidebar navigation with clearly labeled inactive sections for reports, Player records, betting records, cash operations, bank information, and contact information, while preserving the active Player account flow.
+- [x] Replace simple Player credential issuance with an Agent-only Player creation form for manual Player ID, temporary password, phone, bank account name, bank type, streamer account, and bank account number, with validation and protected storage.
+- [x] Add clear duplicate Player ID handling for manual Agent-created Player accounts.
+- [x] Add an automated test proving Agent invitation/list responses exclude all bank account number fields while returning allowed Player profile fields.
+- [x] Browser-test the Agent Create user form with an authorized Agent session, including required fields, credential reveal, and created Player list rendering without entering real customer bank information; revoke the non-personal test invitation afterward.

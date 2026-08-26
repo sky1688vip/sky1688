@@ -1,5 +1,5 @@
 import { and, count, desc, eq, like, or } from "drizzle-orm";
-import { createHash, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
+import { createCipheriv, createHash, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
   agents,
@@ -17,8 +17,9 @@ import type {
   ResultCreateInput,
   ResultUpdateInput,
 } from "./contentSchemas";
-import type { AgentCreateInput } from "./accountSchemas";
+import type { AgentCreateInput, PlayerInviteCreateInput } from "./accountSchemas";
 import { ENV } from "./_core/env";
+import { toAgentVisiblePlayerInvitation } from "./playerProfilePrivacy";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
@@ -331,6 +332,19 @@ function hashPlayerInviteToken(token: string) {
   return createHash("sha256").update(token).digest("hex");
 }
 
+function encryptBankAccountNumber(value: string) {
+  if (!ENV.cookieSecret) throw new Error("PLAYER_BANK_ENCRYPTION_UNAVAILABLE");
+  const key = createHash("sha256").update(ENV.cookieSecret).digest();
+  const iv = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", key, iv);
+  const encrypted = Buffer.concat([cipher.update(value, "utf8"), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return {
+    encrypted: Buffer.concat([encrypted, tag]).toString("base64"),
+    iv: iv.toString("base64"),
+  };
+}
+
 export async function listAdminAgents() {
   const db = await requireDb();
   return db
@@ -470,16 +484,22 @@ async function requireActiveAgentForUser(userId: number) {
   return agent;
 }
 
-export async function createPlayerInvitation(agentUserId: number) {
+export async function createPlayerInvitation(agentUserId: number, input: PlayerInviteCreateInput) {
   const db = await requireDb();
   const agent = await requireActiveAgentForUser(agentUserId);
+  const existingProfiles = await db
+    .select({ id: playerProfiles.id })
+    .from(playerProfiles)
+    .where(eq(playerProfiles.playerCode, input.playerCode))
+    .limit(1);
+  if (existingProfiles[0]) throw new Error("PLAYER_CODE_ALREADY_EXISTS");
   const token = createPlayerInviteToken();
-  const playerCode = randomCode("PL", 4);
-  const temporaryPassword = createTemporaryPassword();
-  const password = createPasswordHash(temporaryPassword);
+  const password = createPasswordHash(input.password);
+  const encryptedBankNumber = encryptBankAccountNumber(input.bankAccountNumber);
   const expiresAt = new Date(Date.now() + playerInviteLifetimeMs);
   const now = new Date();
-  await db.transaction(async tx => {
+  try {
+    await db.transaction(async tx => {
     const tokenHash = hashPlayerInviteToken(token);
     await tx.insert(playerInvitations).values({
       agentId: agent.id,
@@ -492,7 +512,13 @@ export async function createPlayerInvitation(agentUserId: number) {
     await tx.insert(playerProfiles).values({
       agentId: agent.id,
       invitationId: invitation[0].id,
-      playerCode,
+      playerCode: input.playerCode,
+      phone: input.phone,
+      bankAccountName: input.bankAccountName,
+      bankType: input.bankType,
+      streamerAccount: input.streamerAccount,
+      bankAccountNumberEncrypted: encryptedBankNumber.encrypted,
+      bankAccountNumberIv: encryptedBankNumber.iv,
       passwordHash: password.hash,
       passwordSalt: password.salt,
       mustChangePassword: true,
@@ -504,14 +530,18 @@ export async function createPlayerInvitation(agentUserId: number) {
     const profile = await tx.select().from(playerProfiles).where(eq(playerProfiles.invitationId, invitation[0].id)).limit(1);
     if (!profile[0]) throw new Error("PLAYER_PROFILE_CREATE_FAILED");
     await tx.update(playerInvitations).set({ playerProfileId: profile[0].id }).where(eq(playerInvitations.id, invitation[0].id));
-  });
-  return { success: true as const, token, playerCode, temporaryPassword, expiresAt };
+    });
+  } catch (error) {
+    if ((error as { code?: string }).code === "ER_DUP_ENTRY") throw new Error("PLAYER_CODE_ALREADY_EXISTS");
+    throw error;
+  }
+  return { success: true as const, token, playerCode: input.playerCode, temporaryPassword: input.password, expiresAt };
 }
 
 export async function listPlayerInvitationsForAgent(agentUserId: number) {
   const db = await requireDb();
   const agent = await requireActiveAgentForUser(agentUserId);
-  return db
+  const rows = await db
     .select({
       id: playerInvitations.id,
       status: playerInvitations.status,
@@ -519,11 +549,16 @@ export async function listPlayerInvitationsForAgent(agentUserId: number) {
       redeemedAt: playerInvitations.redeemedAt,
       createdAt: playerInvitations.createdAt,
       playerCode: playerProfiles.playerCode,
+      phone: playerProfiles.phone,
+      bankAccountName: playerProfiles.bankAccountName,
+      bankType: playerProfiles.bankType,
+      streamerAccount: playerProfiles.streamerAccount,
     })
     .from(playerInvitations)
     .leftJoin(playerProfiles, eq(playerInvitations.playerProfileId, playerProfiles.id))
     .where(eq(playerInvitations.agentId, agent.id))
     .orderBy(desc(playerInvitations.createdAt), desc(playerInvitations.id));
+  return rows.map(toAgentVisiblePlayerInvitation);
 }
 
 export async function revokePlayerInvitation(agentUserId: number, invitationId: number) {

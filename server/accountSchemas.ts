@@ -45,6 +45,28 @@ export const playerInviteActivateSchema = z.object({
   password: z.string().min(12).max(128),
 });
 
+export const playerInviteCreateSchema = z.object({
+  playerCode: z
+    .string()
+    .trim()
+    .min(6, "Player ID must have at least 6 characters.")
+    .max(32)
+    .regex(/^[A-Za-z0-9_-]+$/, "Player ID must not contain spaces or symbols.")
+    .transform(value => value.toUpperCase()),
+  password: z.string().min(12, "Password must have at least 12 characters.").max(128),
+  phone: z.string().trim().min(6).max(40),
+  bankAccountName: z.string().trim().min(2).max(160),
+  bankType: z.string().trim().min(2).max(120),
+  streamerAccount: z.string().trim().min(2).max(120),
+  bankAccountNumber: z
+    .string()
+    .trim()
+    .min(4)
+    .max(80)
+    .regex(/^[A-Za-z0-9 -]+$/, "Bank account number contains unsupported characters.")
+    .transform(value => value.replace(/\s+/g, "")),
+});
+
 export const playerCredentialLoginSchema = z.object({
   playerCode: z.string().trim().min(6).max(40).transform(value => value.toUpperCase()),
   password: z.string().min(12).max(128),
@@ -59,3 +81,4 @@ export const playerInviteRevokeSchema = z.object({
 });
 
 export type AgentCreateInput = z.infer<typeof agentCreateSchema>;
+export type PlayerInviteCreateInput = z.infer<typeof playerInviteCreateSchema>;

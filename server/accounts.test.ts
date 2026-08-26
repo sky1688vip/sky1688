@@ -5,6 +5,7 @@ import {
   agentPasswordChangeSchema,
   playerCredentialLoginSchema,
   playerInviteActivateSchema,
+  playerInviteCreateSchema,
 } from "./accountSchemas";
 import type { TrpcContext } from "./_core/context";
 
@@ -104,6 +105,16 @@ describe("administrator-issued Agent credential contracts", () => {
 });
 
 describe("Agent-issued Player credential boundaries", () => {
+  const playerCreateInput = {
+    playerCode: "pl_agent_001",
+    password: "p".repeat(24),
+    phone: "0912345678",
+    bankAccountName: "Player Name",
+    bankType: "KBZ Bank",
+    streamerAccount: "မရှိပါ",
+    bankAccountNumber: "1234 5678 9012",
+  };
+
   it("creates an Agent-only session from valid administrator-issued credentials", async () => {
     dbMocks.authenticateAgentCredentials.mockResolvedValue({ userId: 2, mustChangePassword: true });
     sessionMocks.createAgentSession.mockResolvedValue("signed-agent-session");
@@ -119,11 +130,17 @@ describe("Agent-issued Player credential boundaries", () => {
     dbMocks.revokePlayerInvitation.mockResolvedValue({ success: true });
     const { ctx: agentCtx } = contextFactory("agent");
     const agentCaller = appRouter.createCaller(agentCtx);
-    await expect(agentCaller.accounts.agent.playerInvites.create()).resolves.toMatchObject({ playerCode: issue.playerCode, temporaryPassword: issue.temporaryPassword });
+    const parsedCreateInput = playerInviteCreateSchema.parse(playerCreateInput);
+    expect(parsedCreateInput).toMatchObject({ playerCode: "PL_AGENT_001", bankAccountNumber: "123456789012" });
+    expect(playerInviteCreateSchema.safeParse({ ...playerCreateInput, playerCode: "player id" }).success).toBe(false);
+    await expect(agentCaller.accounts.agent.playerInvites.create(playerCreateInput)).resolves.toMatchObject({ playerCode: issue.playerCode, temporaryPassword: issue.temporaryPassword });
+    expect(dbMocks.createPlayerInvitation).toHaveBeenCalledWith(2, expect.objectContaining({ playerCode: "PL_AGENT_001", bankAccountNumber: "123456789012" }));
+    dbMocks.createPlayerInvitation.mockRejectedValueOnce(new Error("PLAYER_CODE_ALREADY_EXISTS"));
+    await expect(agentCaller.accounts.agent.playerInvites.create(playerCreateInput)).rejects.toMatchObject({ code: "CONFLICT", message: expect.stringContaining("Player ID is already in use") });
     await expect(agentCaller.accounts.agent.playerInvites.list()).resolves.toHaveLength(1);
     await expect(agentCaller.accounts.agent.playerInvites.revoke({ id: 12 })).resolves.toEqual({ success: true });
     const { ctx: plainUserCtx } = contextFactory("user");
-    await expect(appRouter.createCaller(plainUserCtx).accounts.agent.playerInvites.create()).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(appRouter.createCaller(plainUserCtx).accounts.agent.playerInvites.create(playerCreateInput)).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 
   it("requires an Agent link plus issued Player ID and password, then creates only a Player session", async () => {

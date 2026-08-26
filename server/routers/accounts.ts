@@ -8,6 +8,7 @@ import {
   agentSuspendSchema,
   playerCredentialLoginSchema,
   playerInviteActivateSchema,
+  playerInviteCreateSchema,
   playerInviteRevokeSchema,
   playerPasswordChangeSchema,
 } from "../accountSchemas";
@@ -107,9 +108,16 @@ export const accountRouter = router({
         requireRole("agent", ctx.user.role);
         return db.listPlayerInvitationsForAgent(ctx.user.id);
       }),
-      create: protectedProcedure.mutation(async ({ ctx }) => {
+      create: protectedProcedure.input(playerInviteCreateSchema).mutation(async ({ ctx, input }) => {
         requireRole("agent", ctx.user.role);
-        return db.createPlayerInvitation(ctx.user.id);
+        try {
+          return await db.createPlayerInvitation(ctx.user.id, input);
+        } catch (error) {
+          if ((error as Error).message === "PLAYER_CODE_ALREADY_EXISTS") {
+            throw new TRPCError({ code: "CONFLICT", message: "This Player ID is already in use. Please choose a different Player ID." });
+          }
+          throw error;
+        }
       }),
       revoke: protectedProcedure.input(playerInviteRevokeSchema).mutation(async ({ ctx, input }) => {
         requireRole("agent", ctx.user.role);
