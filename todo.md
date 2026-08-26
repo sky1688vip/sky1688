@@ -44,4 +44,5 @@
 - [ ] When a legitimate published 2D or 3D record exists, browser-test its public `/results/:id` detail route end to end.
 - [x] Add a copyable Agent activation link and Burmese sharing instructions to the administrator Agent-management page.
 - [x] Replace the email-bound Manus Agent activation flow with Admin-issued SKY1688 Agent ID and temporary-password credentials, including secure session handling and one-time credential display.
-- [ ] When approved by the administrator, issue a temporary password for the existing Agent record through the new Password Reset control and verify that Agent’s first credential login.
+- [x] Issue a temporary password for the existing Agent record through the administrator-approved Password Reset control.
+- [x] Verify the existing Agent’s first credential login, required password-change path, active Agent console, and administrator-access denial after administrator approval to switch the active browser session.
