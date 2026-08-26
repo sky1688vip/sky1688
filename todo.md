@@ -1,0 +1,35 @@
+# Project TODO
+
+- [x] 将恢复的 SKY1688 / Golden Money 视觉语言整理为公开站点与管理员后台的设计基线。
+- [x] 定义并迁移分类、2D/3D 结果、Dream1000 条目及发布状态的数据表。
+- [x] 实现公开 tRPC 数据接口：结果列表、结果详情、Dream1000 搜索、分类筛选与条目详情。
+- [x] 实现仅限 Manus 登录管理员访问的后台 tRPC 写入接口，并校验新增、编辑、发布和下架权限。
+- [x] 重建公开首页、2D/3D 结果页、Dream1000 搜索与详情体验，并提供加载、空状态和错误状态。
+- [x] 构建受登录与管理员角色保护的后台：内容总览、结果管理、Dream1000 管理与发布操作。
+- [x] 为发布前流程补齐前端权限提示、后端权限拒绝、表单错误处理与空数据处理。
+- [x] 编写并运行 Vitest，覆盖公开查询、管理员权限和关键数据校验。
+- [x] 验证桌面及移动端界面、检查浏览器控制台与网络错误，并完成发布前检查。
+- [x] 修复管理员页未登录或非管理员状态下仍发起 adminContent 请求的问题，避免产生未授权控制台错误。
+- [x] 补充公开内容查询的 Vitest 覆盖，并验证管理员成功写入的调用边界。
+- [x] 在修复权限请求后重新执行桌面/移动端和控制台 QA，再确认发布前检查结果。
+- [x] 在权限修复后重新截取并检查桌面/移动端的首页、Dream1000 和管理员页，确认布局、空状态与权限提示正常。
+- [x] 在复测后检查最新浏览器控制台日志，确认没有新的前端权限请求错误，再完成发布前 QA。
+- [x] 编写并生成项目状态、恢复资源、缺失项、实施范围与上线步骤幻灯片。
+- [x] 保存最终项目检查点，并准备可发布项目与幻灯片交付。
+- [x] Audit existing admin, agents, and player source files, routes, APIs, data models, and UI flows in the recovered SKY1688 project.
+- [x] Report which admin, agent, and player capabilities are currently implemented, missing, or only present as recovered artifacts.
+- [x] Update the SKY1688 status slide deck with a clear admin versus agents/player coverage assessment.
+- [x] Present the updated SKY1688 current-status slide deck to the user.
+- [x] Confirm whether the current player application has a live route and published deployment.
+- [x] Design an admin-provisioned agent account flow so agents can only be created and activated by administrators.
+- [x] Add agent and player profile tables, activation status, and auditable admin-created invitation fields.
+- [x] Add protected server procedures for creating, suspending, activating, and listing agents, plus player profile retrieval.
+- [x] Add an administrator agent-management route with explicit creation, activation, suspension, empty, and failure states.
+- [x] Add protected player routes for account activation and player profile access without introducing wallet, payment, or wagering flows.
+- [x] Add a protected Agent home route so activation completes at an Agent-only destination rather than the administrator dashboard.
+- [x] Add an explicit protected Player activation/onboarding route and split player profile activation from profile reads.
+- [x] Cover agent provisioning, activation ownership, role boundaries, and player profile setup with Vitest and browser QA.
+- [x] Add deterministic Vitest coverage for mismatched-email, expired, and invalid Agent activation records.
+- [x] Complete the live browser acceptance of a real admin-created Agent invitation using the intended Agent Manus account, then confirm the post-activation role outcome.
+- [x] Independently verify the accepted Agent invitation has an active record, linked user, activation timestamp, and agent role in the database.
+- [x] Save the agent and player account implementation as a new live-ready delivery checkpoint.

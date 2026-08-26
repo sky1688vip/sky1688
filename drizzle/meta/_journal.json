@@ -1,0 +1,27 @@
+{
+  "version": "7",
+  "dialect": "mysql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "5",
+      "when": 1787643063014,
+      "tag": "0000_watery_obadiah_stane",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "5",
+      "when": 1787643282202,
+      "tag": "0001_yellow_stranger",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1787648960076,
+      "tag": "0002_nappy_impossible_man",
+      "breakpoints": true
+    }
+  ]
+}

@@ -1,0 +1,124 @@
+{
+  "project_info": {
+    "title": "SKY1688 / Golden Money",
+    "created": 1787644478.168,
+    "last_updated": 1787645770.511,
+    "total_slides": 11
+  },
+  "slides": [
+    {
+      "id": "cover",
+      "state": "edited",
+      "pageNum": 1
+    },
+    {
+      "id": "recovery",
+      "state": "edited",
+      "pageNum": 2
+    },
+    {
+      "id": "platform",
+      "state": "edited",
+      "pageNum": 3
+    },
+    {
+      "id": "data_model",
+      "state": "edited",
+      "pageNum": 4
+    },
+    {
+      "id": "public_api",
+      "state": "edited",
+      "pageNum": 5
+    },
+    {
+      "id": "admin_guard",
+      "state": "edited",
+      "pageNum": 6
+    },
+    {
+      "id": "role_coverage",
+      "state": "edited",
+      "pageNum": 7
+    },
+    {
+      "id": "visual_qa",
+      "state": "edited",
+      "pageNum": 8
+    },
+    {
+      "id": "engineering",
+      "state": "edited",
+      "pageNum": 9
+    },
+    {
+      "id": "next_steps",
+      "state": "edited",
+      "pageNum": 10
+    },
+    {
+      "id": "closing",
+      "state": "edited",
+      "pageNum": 11
+    }
+  ],
+  "outline": [
+    {
+      "id": "cover",
+      "title": "SKY1688 / Golden Money",
+      "summary": "封面：从恢复原型到可发布内容平台；项目状态与上线准备汇报。"
+    },
+    {
+      "id": "recovery",
+      "title": "恢复内容已形成可开发基线",
+      "summary": "梳理恢复的视觉、页面结构和源码证据，以及尚未恢复的 prompt、真实内容库和 3D 模型。"
+    },
+    {
+      "id": "platform",
+      "title": "原型已升级为全栈可运营站点",
+      "summary": "概述公开站点、后台管理、数据库和 API 已构成完整的内容运营闭环。",
+      "image_plan": "/tmp/upload_zip_inspect/ငွေဖြည့်ပြီးယူနစ် auto ရရှိခြင်းနည်းလမ်း - Manus_files/l75NPrYxUUpsHEjNBiZWEY_1787401694224_na1fn_bW1faW1hZ2U.webp - Golden Money platform user interface screenshot illustrating the operational site and visual design"
+    },
+    {
+      "id": "data_model",
+      "title": "内容模型围绕发布状态设计",
+      "summary": "说明分类、2D/3D 结果和 Dream1000 条目的数据库结构，以及草稿/发布/下架状态。"
+    },
+    {
+      "id": "public_api",
+      "title": "公开端只读取已审核内容",
+      "summary": "展示公开 API、搜索筛选、详情读取与加载、空状态、错误状态的设计。"
+    },
+    {
+      "id": "admin_guard",
+      "title": "后台写入由双层权限保护",
+      "summary": "展示 Manus 登录、管理员角色、服务端权限拒绝和发布流程。"
+    },
+    {
+      "id": "role_coverage",
+      "title": "Admin 已实现，Agents / Player 尚未接入",
+      "summary": "清晰对比当前可运行的内容管理后台、缺失的 agents 数据与路由，以及仅作为恢复视觉原型存在的 player 资产。",
+      "image_plan": "无需新增图片；使用与现有 deck 一致的文字、线框与状态对比布局。"
+    },
+    {
+      "id": "visual_qa",
+      "title": "Golden Money 视觉已落地到真实界面",
+      "summary": "说明公开端、后台和移动端的统一视觉与信息组织，并呈现 UI 复测结论。"
+    },
+    {
+      "id": "engineering",
+      "title": "发布前工程验证已完成",
+      "summary": "总结数据库迁移、构建、TypeScript、Vitest 和权限修复后的日志复测。"
+    },
+    {
+      "id": "next_steps",
+      "title": "上线前只剩真实内容运营",
+      "summary": "列出从管理员登录、内容录入复核到公开发布和最终上线的流程。"
+    },
+    {
+      "id": "closing",
+      "title": "具备上线条件，等待真实内容发布",
+      "summary": "收尾：公开读取、后台管理、权限边界和发布状态已经就绪。"
+    }
+  ]
+}

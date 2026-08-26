@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>公开端只读取已审核内容</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}.slide-container{width:1280px;min-height:720px;background:#fff;color:#0a3b24;font-family:Arial,"Microsoft YaHei",sans-serif;position:relative}.top{height:108px;border-top:8px solid #b7f36a;border-bottom:1px solid #b5cdbd;padding:27px 58px 0;display:flex;justify-content:space-between}.kicker{font-size:12px;letter-spacing:2px;font-weight:800;color:#5c7a66}.title{font-weight:900;font-size:36px;letter-spacing:-1px;margin-top:6px}.title span{color:#5b9a32}.page{font-size:12px;color:#5c7a66;letter-spacing:1px;padding-top:3px}.principle{height:72px;margin:28px 58px 0;border-left:6px solid #b7f36a;background:#f3f8ef;padding:16px 20px;font-size:19px;font-weight:800;line-height:1.35}.principle small{display:block;margin-top:4px;font-size:13px;font-weight:400;color:#4c6756}.flow{display:grid;grid-template-columns:1.05fr 28px 1.1fr 28px 1.2fr 28px 1.2fr;align-items:stretch;margin:34px 58px 0;height:254px}.stage{border-top:4px solid #0a3b24;border-bottom:1px solid #b5cdbd;padding:17px 17px 0}.stage.active{border-top-color:#84cc16;background:#fbfdf9}.stage-no{font-family:monospace;font-size:14px;color:#72a34a;font-weight:700}.stage h3{font-size:18px;margin-top:11px;line-height:1.25}.stage p{font-size:13px;line-height:1.55;color:#4c6756;margin-top:11px}.arrow{display:flex;align-items:center;justify-content:center;color:#84cc16;font-size:25px;font-weight:900}.tag{display:inline-block;margin-top:16px;padding:5px 8px;background:#e7f7d4;color:#376a1b;font-size:11px;font-weight:800;letter-spacing:.5px}.status{display:grid;grid-template-columns:1fr 1fr 1fr;margin:34px 58px 0;border-top:1px solid #b5cdbd}.state{min-height:115px;padding:18px 22px 0;border-right:1px solid #b5cdbd}.state:last-child{border-right:0}.state h4{font-size:14px;font-weight:900;letter-spacing:1px}.state p{margin-top:8px;font-size:13px;line-height:1.45;color:#4c6756}.dot{display:inline-block;width:9px;height:9px;margin-right:8px;background:#84cc16}.dot.gray{background:#aabdb0}.dot.gold{background:#d1a83d}.note{position:absolute;left:58px;bottom:22px;font-size:11px;color:#5c7a66;letter-spacing:.2px}
+</style>
+</head>
+<body>
+<div class="slide-container">
+<div class="top"><div><div class="kicker">PUBLIC CONTENT DELIVERY</div><div class="title">公开端只读取<span>已审核内容</span></div></div><div class="page">04 / 09</div></div>
+<div class="principle">发布状态是公开内容的唯一闸门。<small>草稿和已下架内容保留在后台；公开 API 只返回已发布记录。</small></div>
+<div class="flow"><div class="stage"><div class="stage-no">01 / STATUS GATE</div><h3>后台审核与发布</h3><p>结果、梦境条目和分类先保存为草稿；只有管理员确认后才切换为 published。</p><span class="tag">DRAFT → PUBLISHED</span></div><div class="arrow">→</div><div class="stage active"><div class="stage-no">02 / RESULT API</div><h3>2D / 3D 结果读取</h3><p>公开端支持全部结果、2D、3D 列表与单条详情，读取发布时间、号码和说明。</p><span class="tag">LIST + DETAIL</span></div><div class="arrow">→</div><div class="stage active"><div class="stage-no">03 / DREAM API</div><h3>Dream1000 检索与筛选</h3><p>按关键词、幸运数字或分类读取已发布 Dream1000 条目，并进入完整释义页。</p><span class="tag">SEARCH + CATEGORY</span></div><div class="arrow">→</div><div class="stage active"><div class="stage-no">04 / READER</div><h3>用户可见详情</h3><p>公开页自动随发布状态更新，不需要重复修改前端页面或手动更新内容区。</p><span class="tag">AUTO DISPLAY</span></div></div>
+<div class="status"><div class="state"><h4><span class="dot"></span>加载状态</h4><p>数据读取中显示明确反馈，而不是留下一块无法解释的空白区域。</p></div><div class="state"><h4><span class="dot gray"></span>空状态</h4><p>没有已发布内容时，页面引导管理员从后台建立真实内容，而不展示虚构结果。</p></div><div class="state"><h4><span class="dot gold"></span>错误状态</h4><p>请求异常时保留重试提示，帮助用户理解当前问题来自读取而非内容被删除。</p></div></div>
+<div class="note">PUBLIC API CONTRACT · PUBLISHED CONTENT ONLY · SEARCHABLE DREAM1000</div>
+</div>
+</body>
+</html>

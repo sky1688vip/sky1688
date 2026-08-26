@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>内容模型围绕发布状态设计</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+.slide-container{width:1280px;min-height:720px;background:#fff;color:#0a3b24;font-family:Arial,"Microsoft YaHei",sans-serif;position:relative}
+.top{height:112px;border-top:8px solid #b7f36a;border-bottom:1px solid #b5cdbd;padding:27px 58px 0;display:flex;justify-content:space-between}
+.kicker{font-size:12px;letter-spacing:2px;font-weight:800;color:#5c7a66}.title{font-size:36px;letter-spacing:-1px;font-weight:900;margin-top:6px}.title span{color:#5b9a32}.page{font-size:12px;color:#5c7a66;letter-spacing:1px;padding-top:3px}
+.intro{padding:22px 58px 0;display:flex;align-items:center;justify-content:space-between}.intro p{font-size:16px;color:#4c6756;line-height:1.45}.rule{font-size:12px;letter-spacing:1px;font-weight:800;color:#0a3b24;background:#d9ffad;padding:8px 12px}
+.diagram{display:grid;grid-template-columns:1fr 1.15fr 1fr;gap:0;padding:22px 58px 0;height:360px;align-items:center}.table{border:1px solid #9fbca9;background:#fbfdfb;min-height:238px}.table-head{height:48px;background:#0a3b24;color:#fff;display:flex;align-items:center;padding:0 18px;font-family:monospace;font-size:16px;font-weight:700}.table-body{padding:17px 18px 0}.field{display:flex;justify-content:space-between;border-top:1px solid #d9e8dc;padding-top:9px;margin-top:9px;font-size:13px}.field:first-child{border-top:0;margin-top:0;padding-top:0}.field code{font-family:monospace;font-weight:700;color:#0a3b24}.field span{color:#5c7a66;font-size:12px}
+.link-zone{height:238px;display:flex;flex-direction:column;align-items:center;justify-content:center;position:relative}.link-line{height:1px;width:100%;background:#5b9a32;position:relative}.link-line:before{content:"1 : N";position:absolute;left:50%;top:-31px;transform:translateX(-50%);font-family:monospace;font-size:13px;font-weight:700;color:#5b9a32;background:#fff;padding:5px 9px}.link-line:after{content:"categoryId";position:absolute;left:50%;top:17px;transform:translateX(-50%);font-size:12px;color:#5c7a66}.link-note{margin-top:72px;max-width:175px;text-align:center;font-size:12px;line-height:1.45;color:#4c6756}
+.status{position:absolute;left:58px;right:58px;bottom:42px;border-top:1px solid #b5cdbd;padding-top:18px;display:grid;grid-template-columns:1.1fr 2.4fr 1.4fr;gap:26px;align-items:center}.status-title{font-size:16px;font-weight:900;line-height:1.25}.states{display:flex;align-items:center;gap:0}.state{height:46px;min-width:126px;border:1px solid #a8c6af;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;color:#0a3b24;background:#fff}.state.published{background:#b7f36a;border-color:#b7f36a}.arrow{height:1px;width:32px;background:#5b9a32;position:relative}.arrow:after{content:"";position:absolute;right:0;top:-3px;border-left:6px solid #5b9a32;border-top:3px solid transparent;border-bottom:3px solid transparent}.filter{font-size:13px;line-height:1.5;color:#4c6756}.filter strong{color:#0a3b24}
+</style>
+</head>
+<body>
+<div class="slide-container">
+  <div class="top"><div><div class="kicker">CONTENT DATA MODEL</div><div class="title">内容模型围绕<span>发布状态</span>设计</div></div><div class="page">03 / 09</div></div>
+  <div class="intro"><p>三张内容表覆盖分类、Dream1000 与 2D/3D 结果；“是否公开”不由页面判断，而由数据库状态统一控制。</p><div class="rule">PUBLISHED-ONLY PUBLIC API</div></div>
+  <div class="diagram">
+    <div class="table"><div class="table-head">dream_categories</div><div class="table-body"><div class="field"><code>id</code><span>主键</span></div><div class="field"><code>name / slug</code><span>公开筛选</span></div><div class="field"><code>sort_order</code><span>运营排序</span></div><div class="field"><code>created_at</code><span>审计时间</span></div></div></div>
+    <div class="link-zone"><div class="link-line"></div><div class="link-note">一个分类可关联多个 Dream1000 条目；条目也允许在录入初期保持未分类。</div></div>
+    <div class="table"><div class="table-head">dream_entries</div><div class="table-body"><div class="field"><code>id / category_id</code><span>关联分类</span></div><div class="field"><code>title / slug</code><span>公开地址</span></div><div class="field"><code>summary / meaning</code><span>摘要与释义</span></div><div class="field"><code>lucky_numbers</code><span>幸运数字</span></div><div class="field"><code>status / published_at</code><span>发布控制</span></div></div></div>
+  </div>
+  <div style="position:absolute;right:58px;top:183px;width:285px;border-top:4px solid #0a3b24;padding-top:14px"><div style="font-family:monospace;font-size:16px;font-weight:700">lottery_results</div><div style="margin-top:11px;font-size:13px;line-height:1.5;color:#4c6756"><strong style="color:#0a3b24">独立结果表</strong><br>game_type · result_number · draw_at<br>source_label · note · status · published_at</div></div>
+  <div class="status"><div class="status-title">一套状态，<br>控制录入与公开可见性</div><div class="states"><div class="state">草稿<br>draft</div><div class="arrow"></div><div class="state published">已发布<br>published</div><div class="arrow"></div><div class="state">已下架<br>archived</div></div><div class="filter"><strong>公开端规则：</strong>列表、搜索、详情统一过滤为 <strong>published</strong>；下架后立即不再由公开 API 返回。</div></div>
+</div>
+</body>
+</html>
