@@ -42,3 +42,4 @@
 - [x] Verify the 2D/3D public result board, 2D filter, unavailable-detail route, API/database response path, and current connection health.
 - [x] Browser-test the 3D filter on the live results board and record its response.
 - [ ] When a legitimate published 2D or 3D record exists, browser-test its public `/results/:id` detail route end to end.
+- [x] Add a copyable Agent activation link and Burmese sharing instructions to the administrator Agent-management page.
