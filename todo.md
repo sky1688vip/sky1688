@@ -38,12 +38,14 @@
 - [x] Perform a detailed review of Agent activation and Player onboarding routes, authorization, validation, data handling, UI states, and test coverage.
 - [x] Push the latest account-flow review documentation and task tracker updates to GitHub main.
 - [x] Use Burmese as the default language for future user-facing SKY1688 work unless the user asks otherwise.
-- [ ] Complete 2D/3D public result verification after checking the 3D filter and a real published-result detail route.
+- [x] Complete 2D/3D public result verification after checking the 3D filter and a real published-result detail route.
 - [x] Verify the 2D/3D public result board, 2D filter, unavailable-detail route, API/database response path, and current connection health.
 - [x] Browser-test the 3D filter on the live results board and record its response.
-- [ ] When a legitimate published 2D or 3D record exists, browser-test its public `/results/:id` detail route end to end.
+- [x] Browser-test a legitimate published 2D or 3D record’s public `/results/:id` detail route end to end.
 - [x] Add a copyable Agent activation link and Burmese sharing instructions to the administrator Agent-management page.
 - [x] Replace the email-bound Manus Agent activation flow with Admin-issued SKY1688 Agent ID and temporary-password credentials, including secure session handling and one-time credential display.
 - [x] Issue a temporary password for the existing Agent record through the administrator-approved Password Reset control.
 - [x] Verify the existing Agent’s first credential login, required password-change path, active Agent console, and administrator-access denial after administrator approval to switch the active browser session.
 - [x] Add a visible Agent logout control that clears the Agent credential session and returns users to the public site for safe administrator re-login.
+- [x] Inspect the user-provided Thai 2D source, prepare a verifiable publication draft, and publish only after explicit approval.
+- [x] Inspect the user-provided Thai 2D source, prepare a verifiable publication draft, and publish the administrator-approved 12:01 and 16:30 draws after explicit approval.
