@@ -52,3 +52,4 @@
 - [x] Require Agent-issued invitation links for Player onboarding, including secure link lifecycle, Agent attribution, and removal of direct self-onboarding.
 - [x] Replace Manus-based Player activation with Agent-issued Player ID and temporary-password credentials, an Agent-issued invitation link, and a dedicated Player sign-in session.
 - [x] Redesign the Agent console as a responsive sidebar dashboard with Player summary metrics, account issuance, invitation status, and no payment, wallet, transfer, or wagering controls.
+- [x] Add the complete reference-inspired Agent sidebar navigation with clearly labeled inactive sections for reports, Player records, betting records, cash operations, bank information, and contact information, while preserving the active Player account flow.
