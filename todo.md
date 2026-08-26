@@ -38,3 +38,7 @@
 - [x] Perform a detailed review of Agent activation and Player onboarding routes, authorization, validation, data handling, UI states, and test coverage.
 - [x] Push the latest account-flow review documentation and task tracker updates to GitHub main.
 - [x] Use Burmese as the default language for future user-facing SKY1688 work unless the user asks otherwise.
+- [ ] Complete 2D/3D public result verification after checking the 3D filter and a real published-result detail route.
+- [x] Verify the 2D/3D public result board, 2D filter, unavailable-detail route, API/database response path, and current connection health.
+- [x] Browser-test the 3D filter on the live results board and record its response.
+- [ ] When a legitimate published 2D or 3D record exists, browser-test its public `/results/:id` detail route end to end.
