@@ -10,20 +10,32 @@ const optionalText = (max: number) =>
 
 export const agentCreateSchema = z.object({
   fullName: z.string().trim().min(2).max(160),
-  email: z.string().trim().email().max(320).transform(value => value.toLowerCase()),
+  email: z.string().trim().email().max(320).optional().transform(value => value?.toLowerCase()),
   phone: optionalText(40),
 });
 
-export const agentActivationSchema = z.object({
-  activationCode: z
+export const agentCredentialLoginSchema = z.object({
+  agentCode: z
     .string()
     .trim()
-    .min(8)
+    .min(6)
     .max(40)
     .transform(value => value.toUpperCase()),
+  password: z.string().min(12).max(128),
+});
+
+export const agentPasswordChangeSchema = z.object({
+  newPassword: z
+    .string()
+    .min(12, "Password must have at least 12 characters.")
+    .max(128),
 });
 
 export const agentSuspendSchema = z.object({
+  id: z.number().int().positive(),
+});
+
+export const agentCredentialResetSchema = z.object({
   id: z.number().int().positive(),
 });
 

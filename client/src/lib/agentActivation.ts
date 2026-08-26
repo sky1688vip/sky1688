@@ -1,4 +1,4 @@
-export const agentActivationPath = "/agent/activate";
+export const agentActivationPath = "/agent/login";
 export const defaultPublicAppOrigin = "https://sky1688lotto-csfu4zpn.manus.space";
 
 export function getAgentActivationUrl(origin: string) {

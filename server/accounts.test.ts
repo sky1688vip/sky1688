@@ -1,19 +1,23 @@
 import { describe, expect, it, vi } from "vitest";
-import { agentActivationSchema, agentCreateSchema } from "./accountSchemas";
-import { assertAgentActivationAllowed } from "./accountRules";
+import { agentCredentialLoginSchema, agentCreateSchema, agentPasswordChangeSchema } from "./accountSchemas";
 import type { TrpcContext } from "./_core/context";
 
 const dbMocks = vi.hoisted(() => ({
   createProvisionedAgent: vi.fn(),
+  resetAgentCredentials: vi.fn(),
   listAdminAgents: vi.fn(),
   suspendAgent: vi.fn(),
-  activateProvisionedAgent: vi.fn(),
+  authenticateAgentCredentials: vi.fn(),
+  changeAgentPassword: vi.fn(),
   getOrCreatePlayerProfile: vi.fn(),
   getPlayerProfile: vi.fn(),
   getAgentByUserId: vi.fn(),
 }));
 
+const sessionMocks = vi.hoisted(() => ({ createAgentSession: vi.fn() }));
+
 vi.mock("./db", () => dbMocks);
+vi.mock("./agentSession", () => ({ AGENT_SESSION_COOKIE: "sky1688_agent_session", createAgentSession: sessionMocks.createAgentSession }));
 
 import { appRouter } from "./routers";
 
@@ -30,58 +34,72 @@ const userFactory = (role: AppRole) => ({
   lastSignedIn: new Date(),
 });
 
-const contextFactory = (role: AppRole | null): TrpcContext => ({
-  user: role ? userFactory(role) : null,
-  req: {} as TrpcContext["req"],
-  res: {} as TrpcContext["res"],
-});
+function contextFactory(role: AppRole | null) {
+  const cookie = vi.fn();
+  const ctx: TrpcContext = {
+    user: role ? userFactory(role) : null,
+    req: { headers: {}, protocol: "https" } as TrpcContext["req"],
+    res: { cookie } as TrpcContext["res"],
+  };
+  return { ctx, cookie };
+}
 
-describe("agent provisioning contracts", () => {
-  it("normalizes administrator-provisioned agent data", () => {
+describe("administrator-issued Agent credential contracts", () => {
+  it("accepts optional contact email and normalizes supplied credential input", () => {
     const input = agentCreateSchema.parse({ fullName: "Agent One", email: "Agent@Example.COM", phone: " 0912345678 " });
     expect(input).toMatchObject({ email: "agent@example.com", phone: "0912345678" });
-    expect(agentActivationSchema.parse({ activationCode: "sky-abcd1234" }).activationCode).toBe("SKY-ABCD1234");
+    expect(agentCreateSchema.parse({ fullName: "Agent Two" }).email).toBeUndefined();
+    expect(agentCredentialLoginSchema.parse({ agentCode: "ag-abc123", password: "long-enough-password" }).agentCode).toBe("AG-ABC123");
+    expect(agentPasswordChangeSchema.safeParse({ newPassword: "short" }).success).toBe(false);
   });
 
-  it("rejects agent management for non-administrators", async () => {
-    const caller = appRouter.createCaller(contextFactory("user"));
+  it("rejects Agent management for non-administrators", async () => {
+    const { ctx } = contextFactory("user");
+    const caller = appRouter.createCaller(ctx);
     await expect(caller.adminAgents.list()).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 
-  it("rejects invalid, expired, and email-mismatched invitation activation attempts", () => {
-    const now = new Date("2026-08-25T00:00:00.000Z");
-    const valid = { email: "agent@example.com", status: "invited" as const, activationExpiresAt: new Date("2026-08-26T00:00:00.000Z") };
-    expect(() => assertAgentActivationAllowed(undefined, "agent@example.com", now)).toThrow("invalid, expired, or unavailable");
-    expect(() => assertAgentActivationAllowed({ ...valid, activationExpiresAt: new Date("2026-08-24T00:00:00.000Z") }, "agent@example.com", now)).toThrow("invalid, expired, or unavailable");
-    expect(() => assertAgentActivationAllowed(valid, "other@example.com", now)).toThrow("different email address");
-  });
-
-  it("allows an administrator to provision an agent", async () => {
-    dbMocks.createProvisionedAgent.mockResolvedValue({ success: true, agentCode: "AG-101", activationCode: "SKY-ABCD1234" });
-    const caller = appRouter.createCaller(contextFactory("admin"));
-    await expect(caller.adminAgents.create({ fullName: "Agent One", email: "agent@example.com" })).resolves.toMatchObject({ success: true });
-    expect(dbMocks.createProvisionedAgent).toHaveBeenCalledWith(expect.objectContaining({ email: "agent@example.com" }), 1);
+  it("allows an administrator to provision and reset credentials without returning a password from list", async () => {
+    dbMocks.createProvisionedAgent.mockResolvedValue({ success: true, agentCode: "AG-101", temporaryPassword: "SKY-test-password", temporaryPasswordExpiresAt: new Date() });
+    dbMocks.resetAgentCredentials.mockResolvedValue({ success: true, agentCode: "AG-101", temporaryPassword: "SKY-new-password", temporaryPasswordExpiresAt: new Date() });
+    const { ctx } = contextFactory("admin");
+    const caller = appRouter.createCaller(ctx);
+    await expect(caller.adminAgents.create({ fullName: "Agent One" })).resolves.toMatchObject({ success: true, agentCode: "AG-101" });
+    expect(dbMocks.createProvisionedAgent).toHaveBeenCalledWith(expect.objectContaining({ fullName: "Agent One" }), 1);
+    await expect(caller.adminAgents.resetCredentials({ id: 3 })).resolves.toMatchObject({ temporaryPassword: "SKY-new-password" });
   });
 });
 
-describe("agent activation and player accounts", () => {
-  it("allows only a regular authenticated user to activate a provisioned agent account", async () => {
-    dbMocks.activateProvisionedAgent.mockResolvedValue({ success: true, status: "active" });
-    const caller = appRouter.createCaller(contextFactory("user"));
-    await expect(caller.accounts.agent.activate({ activationCode: "SKY-ABCD1234" })).resolves.toMatchObject({ status: "active" });
-    expect(dbMocks.activateProvisionedAgent).toHaveBeenCalledWith("SKY-ABCD1234", expect.objectContaining({ id: 7, email: "user@example.com" }));
-    const adminCaller = appRouter.createCaller(contextFactory("admin"));
-    await expect(adminCaller.accounts.agent.activate({ activationCode: "SKY-ABCD1234" })).rejects.toMatchObject({ code: "FORBIDDEN" });
+describe("Agent credential login and player boundaries", () => {
+  it("creates an Agent-only session from valid administrator-issued credentials", async () => {
+    dbMocks.authenticateAgentCredentials.mockResolvedValue({ userId: 2, mustChangePassword: true });
+    sessionMocks.createAgentSession.mockResolvedValue("signed-agent-session");
+    const { ctx, cookie } = contextFactory(null);
+    const caller = appRouter.createCaller(ctx);
+    await expect(caller.accounts.agent.login({ agentCode: "AG-ABC123", password: "long-enough-password" })).resolves.toEqual({ success: true, mustChangePassword: true });
+    expect(dbMocks.authenticateAgentCredentials).toHaveBeenCalledWith("AG-ABC123", "long-enough-password");
+    expect(cookie).toHaveBeenCalledWith("sky1688_agent_session", "signed-agent-session", expect.objectContaining({ httpOnly: true }));
   });
 
-  it("allows only a player-role user to read and explicitly activate a player profile", async () => {
+  it("allows only an authenticated Agent to change the temporary password and enter an active Agent record", async () => {
+    dbMocks.getAgentByUserId.mockResolvedValue({ id: 3, userId: 2, status: "active", mustChangePassword: true });
+    dbMocks.changeAgentPassword.mockResolvedValue({ success: true });
+    const { ctx } = contextFactory("agent");
+    const caller = appRouter.createCaller(ctx);
+    await expect(caller.accounts.agent.changePassword({ newPassword: "strong-agent-password" })).resolves.toEqual({ success: true });
+    await expect(caller.accounts.agent.me()).resolves.toMatchObject({ id: 3, status: "active" });
+    const { ctx: userCtx } = contextFactory("user");
+    await expect(appRouter.createCaller(userCtx).accounts.agent.changePassword({ newPassword: "strong-agent-password" })).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+
+  it("retains explicit Player onboarding for plain user accounts only", async () => {
     dbMocks.getOrCreatePlayerProfile.mockResolvedValue({ id: 9, userId: 7, status: "active" });
     dbMocks.getPlayerProfile.mockResolvedValue(null);
-    const caller = appRouter.createCaller(contextFactory("user"));
+    const { ctx } = contextFactory("user");
+    const caller = appRouter.createCaller(ctx);
     await expect(caller.accounts.player.me()).resolves.toBeNull();
     await expect(caller.accounts.player.activate()).resolves.toMatchObject({ userId: 7, status: "active" });
-    expect(dbMocks.getOrCreatePlayerProfile).toHaveBeenCalledWith(7, "user account");
-    const agentCaller = appRouter.createCaller(contextFactory("agent"));
-    await expect(agentCaller.accounts.player.me()).rejects.toMatchObject({ code: "FORBIDDEN" });
+    const { ctx: agentCtx } = contextFactory("agent");
+    await expect(appRouter.createCaller(agentCtx).accounts.player.me()).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 });

@@ -1,5 +1,5 @@
 import { and, count, desc, eq, like, or } from "drizzle-orm";
-import { createHash, randomBytes } from "node:crypto";
+import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
   agents,
@@ -17,7 +17,6 @@ import type {
   ResultUpdateInput,
 } from "./contentSchemas";
 import type { AgentCreateInput } from "./accountSchemas";
-import { assertAgentActivationAllowed } from "./accountRules";
 import { ENV } from "./_core/env";
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -68,6 +67,13 @@ export async function getUserByOpenId(openId: string) {
   const db = await getDb();
   if (!db) return undefined;
   const result = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
+  return result[0];
+}
+
+export async function getUserById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(users).where(eq(users.id, id)).limit(1);
   return result[0];
 }
 
@@ -295,9 +301,24 @@ export async function getAdminOverview() {
   };
 }
 
-const normalizeEmail = (email: string) => email.trim().toLowerCase();
-const hashActivationCode = (value: string) => createHash("sha256").update(value.trim().toUpperCase()).digest("hex");
 const randomCode = (prefix: string, bytes: number) => `${prefix}-${randomBytes(bytes).toString("hex").toUpperCase()}`;
+const temporaryPasswordLifetimeMs = 24 * 60 * 60 * 1000;
+const loginLockoutMs = 15 * 60 * 1000;
+const maxFailedLoginAttempts = 5;
+
+function createTemporaryPassword() {
+  return `SKY-${randomBytes(18).toString("base64url")}`;
+}
+
+function createPasswordHash(password: string, salt = randomBytes(16).toString("hex")) {
+  return { salt, hash: scryptSync(password, salt, 64).toString("hex") };
+}
+
+function passwordMatches(password: string, salt: string, storedHash: string) {
+  const calculated = scryptSync(password, salt, 64);
+  const expected = Buffer.from(storedHash, "hex");
+  return expected.length === calculated.length && timingSafeEqual(expected, calculated);
+}
 
 export async function listAdminAgents() {
   const db = await requireDb();
@@ -310,20 +331,40 @@ export async function listAdminAgents() {
 
 export async function createProvisionedAgent(input: AgentCreateInput, createdByUserId: number) {
   const db = await requireDb();
-  const activationCode = randomCode("SKY", 5);
-  const activationExpiresAt = new Date(Date.now() + 72 * 60 * 60 * 1000);
   const agentCode = randomCode("AG", 4);
-  await db.insert(agents).values({
-    fullName: input.fullName,
-    email: normalizeEmail(input.email),
-    phone: input.phone ?? null,
-    agentCode,
-    status: "invited",
-    activationCodeHash: hashActivationCode(activationCode),
-    activationExpiresAt,
-    createdByUserId,
+  const temporaryPassword = createTemporaryPassword();
+  const password = createPasswordHash(temporaryPassword);
+  const temporaryPasswordExpiresAt = new Date(Date.now() + temporaryPasswordLifetimeMs);
+  const now = new Date();
+  await db.transaction(async tx => {
+    await tx.insert(users).values({
+      openId: `agent:${agentCode}`,
+      name: input.fullName,
+      email: input.email ?? null,
+      loginMethod: "agent-credential",
+      role: "agent",
+      lastSignedIn: now,
+    });
+    const linkedUser = await tx.select().from(users).where(eq(users.openId, `agent:${agentCode}`)).limit(1);
+    const user = linkedUser[0];
+    if (!user) throw new Error("AGENT_USER_CREATE_FAILED");
+    await tx.insert(agents).values({
+      userId: user.id,
+      fullName: input.fullName,
+      email: input.email ?? null,
+      phone: input.phone ?? null,
+      agentCode,
+      status: "invited",
+      passwordHash: password.hash,
+      passwordSalt: password.salt,
+      mustChangePassword: true,
+      temporaryPasswordExpiresAt,
+      failedLoginCount: 0,
+      credentialIssuedAt: now,
+      createdByUserId,
+    });
   });
-  return { success: true as const, agentCode, activationCode, activationExpiresAt };
+  return { success: true as const, agentCode, temporaryPassword, temporaryPasswordExpiresAt };
 }
 
 export async function suspendAgent(id: number) {
@@ -332,26 +373,78 @@ export async function suspendAgent(id: number) {
   return { success: true as const };
 }
 
-export async function activateProvisionedAgent(
-  activationCode: string,
-  user: { id: number; email: string | null },
-) {
+export async function authenticateAgentCredentials(agentCode: string, password: string) {
   const db = await requireDb();
   const rows = await db
     .select()
     .from(agents)
-    .where(eq(agents.activationCodeHash, hashActivationCode(activationCode)))
+    .where(eq(agents.agentCode, agentCode.trim().toUpperCase()))
     .limit(1);
   const agent = rows[0];
-  assertAgentActivationAllowed(agent, user.email);
+  if (!agent || !agent.userId || !agent.passwordHash || !agent.passwordSalt || agent.status === "suspended") {
+    throw new Error("INVALID_AGENT_CREDENTIALS");
+  }
+  const now = new Date();
+  if (agent.lockedUntil && agent.lockedUntil > now) throw new Error("AGENT_CREDENTIALS_LOCKED");
+  if (agent.mustChangePassword && agent.temporaryPasswordExpiresAt && agent.temporaryPasswordExpiresAt <= now) {
+    throw new Error("TEMPORARY_PASSWORD_EXPIRED");
+  }
+  if (!passwordMatches(password, agent.passwordSalt, agent.passwordHash)) {
+    const failedLoginCount = agent.failedLoginCount + 1;
+    await db.update(agents).set({
+      failedLoginCount,
+      lockedUntil: failedLoginCount >= maxFailedLoginAttempts ? new Date(now.getTime() + loginLockoutMs) : null,
+    }).where(eq(agents.id, agent.id));
+    throw new Error("INVALID_AGENT_CREDENTIALS");
+  }
   await db.transaction(async tx => {
-    await tx
-      .update(agents)
-      .set({ userId: user.id, status: "active", activatedAt: new Date(), suspendedAt: null })
-      .where(eq(agents.id, agent.id));
-    await tx.update(users).set({ role: "agent" }).where(eq(users.id, user.id));
+    await tx.update(agents).set({
+      status: "active",
+      activatedAt: agent.activatedAt ?? now,
+      suspendedAt: null,
+      failedLoginCount: 0,
+      lockedUntil: null,
+      lastCredentialLoginAt: now,
+    }).where(eq(agents.id, agent.id));
+    await tx.update(users).set({ lastSignedIn: now, role: "agent" }).where(eq(users.id, agent.userId!));
   });
-  return { success: true as const, agentCode: agent.agentCode, status: "active" as const };
+  return { userId: agent.userId, mustChangePassword: agent.mustChangePassword };
+}
+
+export async function changeAgentPassword(userId: number, newPassword: string) {
+  const db = await requireDb();
+  const agent = await getAgentByUserId(userId);
+  if (!agent || agent.status !== "active") throw new Error("AGENT_ACCOUNT_UNAVAILABLE");
+  const password = createPasswordHash(newPassword);
+  await db.update(agents).set({
+    passwordHash: password.hash,
+    passwordSalt: password.salt,
+    mustChangePassword: false,
+    temporaryPasswordExpiresAt: null,
+    failedLoginCount: 0,
+    lockedUntil: null,
+  }).where(eq(agents.id, agent.id));
+  return { success: true as const };
+}
+
+export async function resetAgentCredentials(id: number) {
+  const db = await requireDb();
+  const rows = await db.select().from(agents).where(eq(agents.id, id)).limit(1);
+  const agent = rows[0];
+  if (!agent || agent.status === "suspended") throw new Error("AGENT_ACCOUNT_UNAVAILABLE");
+  const temporaryPassword = createTemporaryPassword();
+  const password = createPasswordHash(temporaryPassword);
+  const temporaryPasswordExpiresAt = new Date(Date.now() + temporaryPasswordLifetimeMs);
+  await db.update(agents).set({
+    passwordHash: password.hash,
+    passwordSalt: password.salt,
+    mustChangePassword: true,
+    temporaryPasswordExpiresAt,
+    failedLoginCount: 0,
+    lockedUntil: null,
+    credentialIssuedAt: new Date(),
+  }).where(eq(agents.id, id));
+  return { success: true as const, agentCode: agent.agentCode, temporaryPassword, temporaryPasswordExpiresAt };
 }
 
 export async function getAgentByUserId(userId: number) {

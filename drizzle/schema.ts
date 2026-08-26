@@ -87,8 +87,9 @@ export const dreamEntries = mysqlTable(
 );
 
 /**
- * Agent accounts can only be provisioned by an administrator. An invited agent
- * becomes active only after the invited Manus identity completes activation.
+ * Agent accounts can only be provisioned by an administrator. Their login ID
+ * and temporary password are issued by that administrator, independently of
+ * Manus OAuth identity.
  */
 export const agents = mysqlTable(
   "agents",
@@ -96,14 +97,22 @@ export const agents = mysqlTable(
     id: int("id").autoincrement().primaryKey(),
     userId: int("userId"),
     fullName: varchar("fullName", { length: 160 }).notNull(),
-    email: varchar("email", { length: 320 }).notNull(),
+    email: varchar("email", { length: 320 }),
     phone: varchar("phone", { length: 40 }),
     agentCode: varchar("agentCode", { length: 32 }).notNull(),
     status: mysqlEnum("status", ["invited", "active", "suspended"])
       .default("invited")
       .notNull(),
-    activationCodeHash: varchar("activationCodeHash", { length: 64 }).notNull(),
-    activationExpiresAt: timestamp("activationExpiresAt").notNull(),
+    activationCodeHash: varchar("activationCodeHash", { length: 64 }),
+    activationExpiresAt: timestamp("activationExpiresAt"),
+    passwordHash: varchar("passwordHash", { length: 255 }),
+    passwordSalt: varchar("passwordSalt", { length: 64 }),
+    mustChangePassword: boolean("mustChangePassword").default(true).notNull(),
+    temporaryPasswordExpiresAt: timestamp("temporaryPasswordExpiresAt"),
+    failedLoginCount: int("failedLoginCount").default(0).notNull(),
+    lockedUntil: timestamp("lockedUntil"),
+    credentialIssuedAt: timestamp("credentialIssuedAt"),
+    lastCredentialLoginAt: timestamp("lastCredentialLoginAt"),
     activatedAt: timestamp("activatedAt"),
     suspendedAt: timestamp("suspendedAt"),
     createdByUserId: int("createdByUserId").notNull(),

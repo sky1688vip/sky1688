@@ -43,3 +43,5 @@
 - [x] Browser-test the 3D filter on the live results board and record its response.
 - [ ] When a legitimate published 2D or 3D record exists, browser-test its public `/results/:id` detail route end to end.
 - [x] Add a copyable Agent activation link and Burmese sharing instructions to the administrator Agent-management page.
+- [x] Replace the email-bound Manus Agent activation flow with Admin-issued SKY1688 Agent ID and temporary-password credentials, including secure session handling and one-time credential display.
+- [ ] When approved by the administrator, issue a temporary password for the existing Agent record through the new Password Reset control and verify that Agent’s first credential login.

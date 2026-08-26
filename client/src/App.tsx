@@ -15,6 +15,7 @@ import ResultDetail from "./pages/ResultDetail";
 import Results from "./pages/Results";
 import AgentActivation from "./pages/AgentActivation";
 import AgentHome from "./pages/AgentHome";
+import AgentPassword from "./pages/AgentPassword";
 import PlayerAccount from "./pages/PlayerAccount";
 import PlayerActivation from "./pages/PlayerActivation";
 
@@ -27,7 +28,9 @@ function Router() {
     <Route path="/dreams/:slug" component={DreamDetail} />
     <Route path="/player" component={PlayerAccount} />
     <Route path="/player/activate" component={PlayerActivation} />
+    <Route path="/agent/login" component={AgentActivation} />
     <Route path="/agent/activate" component={AgentActivation} />
+    <Route path="/agent/password" component={AgentPassword} />
     <Route path="/agent" component={AgentHome} />
     <Route path="/admin" component={AdminOverview} />
     <Route path="/admin/results" component={AdminResults} />
