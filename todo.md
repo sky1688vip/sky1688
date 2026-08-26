@@ -46,3 +46,4 @@
 - [x] Replace the email-bound Manus Agent activation flow with Admin-issued SKY1688 Agent ID and temporary-password credentials, including secure session handling and one-time credential display.
 - [x] Issue a temporary password for the existing Agent record through the administrator-approved Password Reset control.
 - [x] Verify the existing Agent’s first credential login, required password-change path, active Agent console, and administrator-access denial after administrator approval to switch the active browser session.
+- [x] Add a visible Agent logout control that clears the Agent credential session and returns users to the public site for safe administrator re-login.
