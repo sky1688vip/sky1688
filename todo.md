@@ -36,5 +36,5 @@
 - [x] Export the current SKY1688 project source to sky1688vip/sky1688 on main through the approved GitHub connection.
 - [x] Verify that GitHub main resolves to the export commit and includes the application package, routes, schema, and Agent account router.
 - [x] Perform a detailed review of Agent activation and Player onboarding routes, authorization, validation, data handling, UI states, and test coverage.
-- [ ] Push the latest account-flow review documentation and task tracker updates to GitHub main.
+- [x] Push the latest account-flow review documentation and task tracker updates to GitHub main.
 - [x] Use Burmese as the default language for future user-facing SKY1688 work unless the user asks otherwise.
