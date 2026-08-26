@@ -129,14 +129,16 @@ export const agents = mysqlTable(
 );
 
 /**
- * Player profiles are created on the first authenticated player account visit.
- * This table intentionally stores no wallet, payment, or wagering data.
+ * Player profiles are created only when an Agent-issued Player invitation is
+ * redeemed by an authenticated plain-user account. This table intentionally
+ * stores no wallet, payment, or wagering data.
  */
 export const playerProfiles = mysqlTable(
   "player_profiles",
   {
     id: int("id").autoincrement().primaryKey(),
     userId: int("userId").notNull(),
+    agentId: int("agentId"),
     displayName: varchar("displayName", { length: 160 }),
     status: mysqlEnum("status", ["active", "suspended"]).default("active").notNull(),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -145,6 +147,31 @@ export const playerProfiles = mysqlTable(
   table => [
     uniqueIndex("player_profiles_user_id_unique").on(table.userId),
     index("player_profiles_status_created_index").on(table.status, table.createdAt),
+    index("player_profiles_agent_created_index").on(table.agentId, table.createdAt),
+  ],
+);
+
+/**
+ * Only active Agents can create Player invitations. The raw secret is returned
+ * once to the issuing Agent; the database stores a SHA-256 hash instead.
+ */
+export const playerInvitations = mysqlTable(
+  "player_invitations",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    agentId: int("agentId").notNull(),
+    tokenHash: varchar("tokenHash", { length: 64 }).notNull(),
+    status: mysqlEnum("status", ["issued", "redeemed", "revoked"]).default("issued").notNull(),
+    expiresAt: timestamp("expiresAt").notNull(),
+    redeemedByUserId: int("redeemedByUserId"),
+    redeemedAt: timestamp("redeemedAt"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  table => [
+    uniqueIndex("player_invitations_token_hash_unique").on(table.tokenHash),
+    index("player_invitations_agent_status_created_index").on(table.agentId, table.status, table.createdAt),
+    index("player_invitations_status_expires_index").on(table.status, table.expiresAt),
   ],
 );
 
@@ -155,3 +182,4 @@ export type LotteryResult = typeof lotteryResults.$inferSelect;
 export type DreamEntry = typeof dreamEntries.$inferSelect;
 export type Agent = typeof agents.$inferSelect;
 export type PlayerProfile = typeof playerProfiles.$inferSelect;
+export type PlayerInvitation = typeof playerInvitations.$inferSelect;

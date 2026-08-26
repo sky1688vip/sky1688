@@ -39,4 +39,12 @@ export const agentCredentialResetSchema = z.object({
   id: z.number().int().positive(),
 });
 
+export const playerInviteRedeemSchema = z.object({
+  token: z.string().trim().min(32).max(128),
+});
+
+export const playerInviteRevokeSchema = z.object({
+  id: z.number().int().positive(),
+});
+
 export type AgentCreateInput = z.infer<typeof agentCreateSchema>;

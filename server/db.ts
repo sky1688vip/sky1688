@@ -1,5 +1,5 @@
 import { and, count, desc, eq, like, or } from "drizzle-orm";
-import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
   agents,
@@ -7,6 +7,7 @@ import {
   dreamEntries,
   InsertUser,
   lotteryResults,
+  playerInvitations,
   playerProfiles,
   users,
 } from "../drizzle/schema";
@@ -305,6 +306,7 @@ const randomCode = (prefix: string, bytes: number) => `${prefix}-${randomBytes(b
 const temporaryPasswordLifetimeMs = 24 * 60 * 60 * 1000;
 const loginLockoutMs = 15 * 60 * 1000;
 const maxFailedLoginAttempts = 5;
+const playerInviteLifetimeMs = 72 * 60 * 60 * 1000;
 
 function createTemporaryPassword() {
   return `SKY-${randomBytes(18).toString("base64url")}`;
@@ -318,6 +320,14 @@ function passwordMatches(password: string, salt: string, storedHash: string) {
   const calculated = scryptSync(password, salt, 64);
   const expected = Buffer.from(storedHash, "hex");
   return expected.length === calculated.length && timingSafeEqual(expected, calculated);
+}
+
+function createPlayerInviteToken() {
+  return randomBytes(32).toString("base64url");
+}
+
+function hashPlayerInviteToken(token: string) {
+  return createHash("sha256").update(token).digest("hex");
 }
 
 export async function listAdminAgents() {
@@ -453,13 +463,88 @@ export async function getAgentByUserId(userId: number) {
   return rows[0] ?? null;
 }
 
-export async function getOrCreatePlayerProfile(userId: number, displayName?: string) {
+async function requireActiveAgentForUser(userId: number) {
+  const agent = await getAgentByUserId(userId);
+  if (!agent || agent.status !== "active") throw new Error("AGENT_ACCOUNT_UNAVAILABLE");
+  return agent;
+}
+
+export async function createPlayerInvitation(agentUserId: number) {
   const db = await requireDb();
-  const existing = await db.select().from(playerProfiles).where(eq(playerProfiles.userId, userId)).limit(1);
-  if (existing[0]) return existing[0];
-  await db.insert(playerProfiles).values({ userId, displayName: displayName ?? null, status: "active" });
-  const created = await db.select().from(playerProfiles).where(eq(playerProfiles.userId, userId)).limit(1);
-  return created[0] ?? null;
+  const agent = await requireActiveAgentForUser(agentUserId);
+  const token = createPlayerInviteToken();
+  const expiresAt = new Date(Date.now() + playerInviteLifetimeMs);
+  await db.insert(playerInvitations).values({
+    agentId: agent.id,
+    tokenHash: hashPlayerInviteToken(token),
+    status: "issued",
+    expiresAt,
+  });
+  return { success: true as const, token, expiresAt };
+}
+
+export async function listPlayerInvitationsForAgent(agentUserId: number) {
+  const db = await requireDb();
+  const agent = await requireActiveAgentForUser(agentUserId);
+  return db
+    .select()
+    .from(playerInvitations)
+    .where(eq(playerInvitations.agentId, agent.id))
+    .orderBy(desc(playerInvitations.createdAt), desc(playerInvitations.id));
+}
+
+export async function revokePlayerInvitation(agentUserId: number, invitationId: number) {
+  const db = await requireDb();
+  const agent = await requireActiveAgentForUser(agentUserId);
+  await db
+    .update(playerInvitations)
+    .set({ status: "revoked" })
+    .where(and(
+      eq(playerInvitations.id, invitationId),
+      eq(playerInvitations.agentId, agent.id),
+      eq(playerInvitations.status, "issued"),
+    ));
+  return { success: true as const };
+}
+
+export async function redeemPlayerInvitation(userId: number, displayName: string | undefined, token: string) {
+  const db = await requireDb();
+  const tokenHash = hashPlayerInviteToken(token);
+  const now = new Date();
+  return db.transaction(async tx => {
+    const existing = await tx.select().from(playerProfiles).where(eq(playerProfiles.userId, userId)).limit(1);
+    if (existing[0]) return existing[0];
+
+    const invitations = await tx.select().from(playerInvitations).where(eq(playerInvitations.tokenHash, tokenHash)).limit(1);
+    const invitation = invitations[0];
+    if (!invitation || invitation.status !== "issued" || invitation.expiresAt <= now) {
+      throw new Error("PLAYER_INVITATION_INVALID");
+    }
+
+    const invitedAgent = await tx.select().from(agents).where(eq(agents.id, invitation.agentId)).limit(1);
+    if (!invitedAgent[0] || invitedAgent[0].status !== "active") {
+      throw new Error("PLAYER_INVITATION_UNAVAILABLE");
+    }
+
+    await tx
+      .update(playerInvitations)
+      .set({ status: "redeemed", redeemedByUserId: userId, redeemedAt: now })
+      .where(and(eq(playerInvitations.id, invitation.id), eq(playerInvitations.status, "issued")));
+
+    const consumed = await tx.select().from(playerInvitations).where(eq(playerInvitations.id, invitation.id)).limit(1);
+    if (consumed[0]?.status !== "redeemed" || consumed[0]?.redeemedByUserId !== userId) {
+      throw new Error("PLAYER_INVITATION_ALREADY_USED");
+    }
+
+    await tx.insert(playerProfiles).values({
+      userId,
+      agentId: invitation.agentId,
+      displayName: displayName ?? null,
+      status: "active",
+    });
+    const created = await tx.select().from(playerProfiles).where(eq(playerProfiles.userId, userId)).limit(1);
+    return created[0] ?? null;
+  });
 }
 
 export async function getPlayerProfile(userId: number) {

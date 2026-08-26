@@ -49,3 +49,4 @@
 - [x] Add a visible Agent logout control that clears the Agent credential session and returns users to the public site for safe administrator re-login.
 - [x] Inspect the user-provided Thai 2D source, prepare a verifiable publication draft, and publish only after explicit approval.
 - [x] Inspect the user-provided Thai 2D source, prepare a verifiable publication draft, and publish the administrator-approved 12:01 and 16:30 draws after explicit approval.
+- [x] Require Agent-issued invitation links for Player onboarding, including secure link lifecycle, Agent attribution, and removal of direct self-onboarding.

@@ -6,6 +6,8 @@ import {
   agentCreateSchema,
   agentPasswordChangeSchema,
   agentSuspendSchema,
+  playerInviteRedeemSchema,
+  playerInviteRevokeSchema,
 } from "../accountSchemas";
 import { AGENT_SESSION_COOKIE, createAgentSession } from "../agentSession";
 import { getSessionCookieOptions } from "../_core/cookies";
@@ -26,9 +28,9 @@ export const accountRouter = router({
       requireRole("user", ctx.user.role);
       return db.getPlayerProfile(ctx.user.id);
     }),
-    activate: protectedProcedure.mutation(async ({ ctx }) => {
+    activate: protectedProcedure.input(playerInviteRedeemSchema).mutation(async ({ ctx, input }) => {
       requireRole("user", ctx.user.role);
-      return db.getOrCreatePlayerProfile(ctx.user.id, ctx.user.name ?? undefined);
+      return db.redeemPlayerInvitation(ctx.user.id, ctx.user.name ?? undefined, input.token);
     }),
   }),
   agent: router({
@@ -59,6 +61,20 @@ export const accountRouter = router({
           message: "Agent ID or password is incorrect, expired, or unavailable.",
         });
       }
+    }),
+    playerInvites: router({
+      list: protectedProcedure.query(async ({ ctx }) => {
+        requireRole("agent", ctx.user.role);
+        return db.listPlayerInvitationsForAgent(ctx.user.id);
+      }),
+      create: protectedProcedure.mutation(async ({ ctx }) => {
+        requireRole("agent", ctx.user.role);
+        return db.createPlayerInvitation(ctx.user.id);
+      }),
+      revoke: protectedProcedure.input(playerInviteRevokeSchema).mutation(async ({ ctx, input }) => {
+        requireRole("agent", ctx.user.role);
+        return db.revokePlayerInvitation(ctx.user.id, input.id);
+      }),
     }),
   }),
 });

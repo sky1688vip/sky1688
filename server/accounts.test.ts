@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { agentCredentialLoginSchema, agentCreateSchema, agentPasswordChangeSchema } from "./accountSchemas";
+import { agentCredentialLoginSchema, agentCreateSchema, agentPasswordChangeSchema, playerInviteRedeemSchema } from "./accountSchemas";
 import type { TrpcContext } from "./_core/context";
 
 const dbMocks = vi.hoisted(() => ({
@@ -9,9 +9,12 @@ const dbMocks = vi.hoisted(() => ({
   suspendAgent: vi.fn(),
   authenticateAgentCredentials: vi.fn(),
   changeAgentPassword: vi.fn(),
-  getOrCreatePlayerProfile: vi.fn(),
+  redeemPlayerInvitation: vi.fn(),
   getPlayerProfile: vi.fn(),
   getAgentByUserId: vi.fn(),
+  createPlayerInvitation: vi.fn(),
+  listPlayerInvitationsForAgent: vi.fn(),
+  revokePlayerInvitation: vi.fn(),
 }));
 
 const sessionMocks = vi.hoisted(() => ({ createAgentSession: vi.fn() }));
@@ -70,7 +73,7 @@ describe("administrator-issued Agent credential contracts", () => {
   });
 });
 
-describe("Agent credential login and player boundaries", () => {
+describe("Agent credential login and Player invitation boundaries", () => {
   it("creates an Agent-only session from valid administrator-issued credentials", async () => {
     dbMocks.authenticateAgentCredentials.mockResolvedValue({ userId: 2, mustChangePassword: true });
     sessionMocks.createAgentSession.mockResolvedValue("signed-agent-session");
@@ -92,14 +95,24 @@ describe("Agent credential login and player boundaries", () => {
     await expect(appRouter.createCaller(userCtx).accounts.agent.changePassword({ newPassword: "strong-agent-password" })).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 
-  it("retains explicit Player onboarding for plain user accounts only", async () => {
-    dbMocks.getOrCreatePlayerProfile.mockResolvedValue({ id: 9, userId: 7, status: "active" });
+  it("requires a valid Agent-issued token for Player onboarding and keeps Agent link management Agent-only", async () => {
+    const token = "player-invite-token-example-1234567890";
+    expect(playerInviteRedeemSchema.safeParse({ token: "short" }).success).toBe(false);
+    dbMocks.redeemPlayerInvitation.mockResolvedValue({ id: 9, userId: 7, agentId: 3, status: "active" });
     dbMocks.getPlayerProfile.mockResolvedValue(null);
+    dbMocks.createPlayerInvitation.mockResolvedValue({ success: true, token, expiresAt: new Date() });
+    dbMocks.listPlayerInvitationsForAgent.mockResolvedValue([{ id: 12, status: "issued" }]);
     const { ctx } = contextFactory("user");
     const caller = appRouter.createCaller(ctx);
     await expect(caller.accounts.player.me()).resolves.toBeNull();
-    await expect(caller.accounts.player.activate()).resolves.toMatchObject({ userId: 7, status: "active" });
+    await expect(caller.accounts.player.activate({ token })).resolves.toMatchObject({ userId: 7, agentId: 3, status: "active" });
+    expect(dbMocks.redeemPlayerInvitation).toHaveBeenCalledWith(7, "user account", token);
     const { ctx: agentCtx } = contextFactory("agent");
-    await expect(appRouter.createCaller(agentCtx).accounts.player.me()).rejects.toMatchObject({ code: "FORBIDDEN" });
+    const agentCaller = appRouter.createCaller(agentCtx);
+    await expect(agentCaller.accounts.player.me()).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(agentCaller.accounts.agent.playerInvites.create()).resolves.toMatchObject({ token });
+    await expect(agentCaller.accounts.agent.playerInvites.list()).resolves.toHaveLength(1);
+    const { ctx: plainUserCtx } = contextFactory("user");
+    await expect(appRouter.createCaller(plainUserCtx).accounts.agent.playerInvites.create()).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 });
