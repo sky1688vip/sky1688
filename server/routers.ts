@@ -6,6 +6,7 @@ import { publicProcedure, router } from "./_core/trpc";
 import { accountRouter, adminAgentsRouter } from "./routers/accounts";
 import { adminContentRouter, publicContentRouter } from "./routers/content";
 import { unitRouter } from "./routers/units";
+import { adminPlayerAssetsRouter, playerAssetsRouter } from "./routers/playerAssets";
 
 export const appRouter = router({
   system: systemRouter,
@@ -23,6 +24,8 @@ export const appRouter = router({
   accounts: accountRouter,
   adminAgents: adminAgentsRouter,
   units: unitRouter,
+  playerAssets: playerAssetsRouter,
+  adminPlayerAssets: adminPlayerAssetsRouter,
 });
 
 export type AppRouter = typeof appRouter;

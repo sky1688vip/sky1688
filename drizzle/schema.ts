@@ -263,6 +263,34 @@ export const playerAccountEvents = mysqlTable(
   ],
 );
 
+/**
+ * Current visual assets rendered in the authenticated Player Home. The image
+ * bytes live in S3; this table stores only the active slot, storage key, and
+ * player-safe URL chosen by an Administrator.
+ */
+export const playerHomeAssets = mysqlTable(
+  "player_home_assets",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    slot: mysqlEnum("slot", [
+      "brand_logo",
+      "hero_banner",
+      "quick_result",
+      "quick_dream",
+      "quick_unit",
+      "quick_profile",
+      "notice_icon",
+    ]).notNull(),
+    storageKey: varchar("storageKey", { length: 512 }).notNull(),
+    imageUrl: varchar("imageUrl", { length: 1024 }).notNull(),
+    altText: varchar("altText", { length: 180 }).notNull(),
+    updatedByUserId: int("updatedByUserId").notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  table => [uniqueIndex("player_home_assets_slot_unique").on(table.slot)],
+);
+
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 export type DreamCategory = typeof dreamCategories.$inferSelect;
@@ -274,3 +302,4 @@ export type PlayerInvitation = typeof playerInvitations.$inferSelect;
 export type UnitBalance = typeof unitBalances.$inferSelect;
 export type UnitTransaction = typeof unitTransactions.$inferSelect;
 export type PlayerAccountEvent = typeof playerAccountEvents.$inferSelect;
+export type PlayerHomeAsset = typeof playerHomeAssets.$inferSelect;

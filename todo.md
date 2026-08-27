@@ -82,3 +82,4 @@
 - [ ] Log out `PLAYER225`, then browser-test a fresh returning login using the privately set password and confirm `/player` reaches Player Home without visiting the public homepage.
 - [ ] Complete pending Agent/Player account management acceptance autonomously under the user’s authorization, while retaining the separate exact target/amount/reason requirement for any internal Unit balance change.
 - [x] Execute the user-approved internal Unit credit: Agent `tun654222` to active Player `PLAYER225`, 30,000 Units, reason `wpay`; verify post-credit balances and immutable ledger record.
+- [ ] Add an Administrator-only Player Home asset manager for upload/replacement of the Player logo, main banner, and named shortcut images; store only S3 references and render approved current assets in Player Home.

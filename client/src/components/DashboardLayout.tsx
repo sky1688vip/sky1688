@@ -4,7 +4,7 @@ import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader, SidebarInset, Si
 import { startLogin } from "@/const";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useIsMobile } from "@/hooks/useMobile";
-import { BookOpenText, LayoutDashboard, LogOut, PanelLeft, RadioTower, UserPlus } from "lucide-react";
+import { BookOpenText, ImagePlus, LayoutDashboard, LogOut, PanelLeft, RadioTower, UserPlus } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
@@ -16,6 +16,7 @@ const menuItems = [
   { icon: RadioTower, label: "2D / 3D 结果", path: "/admin/results" },
   { icon: BookOpenText, label: "Dream1000", path: "/admin/dreams" },
   { icon: UserPlus, label: "Agent 账户", path: "/admin/agents" },
+  { icon: ImagePlus, label: "Player ပုံများ", path: "/admin/player-assets" },
 ];
 const SIDEBAR_WIDTH_KEY = "sky1688-sidebar-width"; const DEFAULT_WIDTH = 272; const MIN_WIDTH = 224; const MAX_WIDTH = 440;
 

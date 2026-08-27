@@ -8,6 +8,7 @@ import {
   InsertUser,
   lotteryResults,
   playerAccountEvents,
+  playerHomeAssets,
   playerInvitations,
   playerProfiles,
   unitBalances,
@@ -23,6 +24,8 @@ import type {
 import type { AdminUnitIssueInput, AgentCreateInput, AgentPlayerUnitAdjustmentInput, AgentPlayerUnitTransferInput, PlayerAccountStatusInput, PlayerCredentialResetInput, PlayerInviteCreateInput } from "./accountSchemas";
 import { ENV } from "./_core/env";
 import { toAgentVisiblePlayerInvitation } from "./playerProfilePrivacy";
+import { decodePlayerHomeAsset, type PlayerHomeAssetUploadInput } from "./playerHomeAssets";
+import { storagePut } from "./storage";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
@@ -80,6 +83,47 @@ export async function getUserById(id: number) {
   if (!db) return undefined;
   const result = await db.select().from(users).where(eq(users.id, id)).limit(1);
   return result[0];
+}
+
+export async function listPlayerHomeAssets() {
+  const db = await requireDb();
+  return db
+    .select({
+      slot: playerHomeAssets.slot,
+      imageUrl: playerHomeAssets.imageUrl,
+      altText: playerHomeAssets.altText,
+      updatedAt: playerHomeAssets.updatedAt,
+    })
+    .from(playerHomeAssets)
+    .orderBy(playerHomeAssets.slot);
+}
+
+export async function upsertPlayerHomeAsset(adminUserId: number, input: PlayerHomeAssetUploadInput) {
+  const db = await requireDb();
+  const image = decodePlayerHomeAsset(input);
+  const uploaded = await storagePut(
+    `player-home-assets/${input.slot}_${Date.now()}.${image.extension}`,
+    image.bytes,
+    image.contentType,
+  );
+  await db
+    .insert(playerHomeAssets)
+    .values({
+      slot: input.slot,
+      storageKey: uploaded.key,
+      imageUrl: uploaded.url,
+      altText: input.altText,
+      updatedByUserId: adminUserId,
+    })
+    .onDuplicateKeyUpdate({
+      set: {
+        storageKey: uploaded.key,
+        imageUrl: uploaded.url,
+        altText: input.altText,
+        updatedByUserId: adminUserId,
+      },
+    });
+  return { slot: input.slot, imageUrl: uploaded.url, altText: input.altText };
 }
 
 export async function listPublicCategories() {

@@ -9,6 +9,7 @@ import AdminDreams from "./pages/AdminDreams";
 import AdminAgents from "./pages/AdminAgents";
 import AdminOverview from "./pages/AdminOverview";
 import AdminResults from "./pages/AdminResults";
+import AdminPlayerAssets from "./pages/AdminPlayerAssets";
 import Home from "./pages/Home";
 import NotFound from "./pages/NotFound";
 import ResultDetail from "./pages/ResultDetail";
@@ -36,6 +37,7 @@ function Router() {
     <Route path="/admin/results" component={AdminResults} />
     <Route path="/admin/dreams" component={AdminDreams} />
     <Route path="/admin/agents" component={AdminAgents} />
+    <Route path="/admin/player-assets" component={AdminPlayerAssets} />
     <Route path="/404" component={NotFound} />
     <Route component={NotFound} />
   </Switch>;
