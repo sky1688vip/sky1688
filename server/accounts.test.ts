@@ -182,6 +182,17 @@ describe("Agent-issued Player credential boundaries", () => {
     expect(cookie).toHaveBeenCalledWith("sky1688_player_session", "signed-player-session", expect.objectContaining({ httpOnly: true }));
   });
 
+  it("allows a returning Player credential login to create a dedicated Player session", async () => {
+    const password = "p".repeat(24);
+    dbMocks.authenticatePlayerCredentials.mockResolvedValue({ playerProfileId: 9, mustChangePassword: false });
+    sessionMocks.createPlayerSession.mockResolvedValue("signed-returning-player-session");
+    const { ctx, cookie } = contextFactory(null);
+
+    await expect(appRouter.createCaller(ctx).accounts.player.login({ playerCode: "pl-abc12345", password })).resolves.toEqual({ success: true, mustChangePassword: false });
+    expect(dbMocks.authenticatePlayerCredentials).toHaveBeenCalledWith("PL-ABC12345", password);
+    expect(cookie).toHaveBeenCalledWith("sky1688_player_session", "signed-returning-player-session", expect.objectContaining({ httpOnly: true }));
+  });
+
   it("allows Player profile and password access only through the dedicated Player session", async () => {
     dbMocks.getPlayerProfileById.mockResolvedValue(playerProfile);
     dbMocks.changePlayerPassword.mockResolvedValue({ success: true });
