@@ -65,7 +65,7 @@
 - [x] Fix Agent credential login so `/agent/login` shows and accepts Agent ID/password even when the same browser has an authenticated Administrator Manus session, then browser-verify both role paths.
 - [x] Browser-submit valid Agent ID/password while an Administrator Manus session exists and confirm Agent credential entry succeeds without disrupting the separate Admin session.
 - [x] Browser-verify `/admin/agents` remains accessible after the Agent credential login coexistence check.
-- [ ] Extend the Agent Player list with Player Unit balances, owned-Player enable or suspend controls, temporary-password reset, and auditable internal Unit credit or debit controls without revealing existing passwords.
+- [x] Extend the Agent Player list with Player Unit balances, owned-Player enable or suspend controls, temporary-password reset, and auditable internal Unit credit or debit controls without revealing existing passwords.
 - [x] Finish the dedicated Agent credential-session exit interface and browser-verify it clears only the Agent session before returning to the authenticated Administrator Manus session.
 - [x] Diagnose and fix the live Player credential login failure while preserving Agent-issued invitation, one-time password-change, and session security safeguards.
 - [x] Ensure an active Player credential session takes precedence over an existing Agent credential session, so Player login leads to Player Home rather than Agent or public navigation.
