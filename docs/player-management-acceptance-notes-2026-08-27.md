@@ -27,3 +27,7 @@ The authenticated Player Home was then verified live. It presents the reference-
 ## Credential recovery
 
 The controlled Player account was temporarily locked after rejected credential attempts. An Agent-mediated password reset cleared the lock and required the next password change. A temporary credential shown in a user-provided screenshot was rotated rather than reused. The final account state was active, unlocked, and configured with a private password; no credential value is recorded in this note.
+
+## Approved internal Unit credit
+
+With explicit user approval, the owning Agent credited **30,000 internal Units** to the active controlled Player using reason `wpay`. The credit used the existing conditional atomic-debit business helper: the Agent balance changed from **90,000** to **60,000 Units**, and the Player balance changed from **10,000** to **40,000 Units**. An append-only `agent_adjustment_credit` ledger record was written with the approved amount and reason. No external payment, bank transfer, wallet, deposit, withdrawal, or wager settlement was performed.
