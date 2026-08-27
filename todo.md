@@ -72,6 +72,10 @@
 - [x] Redesign the Player login, authenticated home, profile, and internal Unit balance views as a mobile-first experience informed by the supplied references, without adding external wallet, payment, cash-in/out, or wagering functions.
 - [x] Rework the authenticated Player Home to match the clarified reference hierarchy: prominent banner, service-icon row, 2D/3D/Dream1000 shortcut grid, service notification card, and a compact mobile bottom navigation, while keeping all financial functions inactive.
 - [ ] Browser-verify Agent Player list actions on an active owned Player: confirm suspend/reactivate, one-time password reset, and reason-required Unit credit/debit work and are audited without exposing existing passwords.
+- [x] Perform and verify a reversible suspend-then-reactivate acceptance test for active Player `PLAYER225`, preserving its Unit balance and avoiding any password disclosure.
 - [ ] Browser-test returning Player credential login after first password change, confirming that a normal sign-in reaches Player Home with the new password.
+- [ ] Prevent a successful Player login or password-change completion from returning to the public homepage; route to the authenticated Player Home and retain the Player-only mobile shell.
 - [x] Browser-validate the full authenticated Player Home reference hierarchy and confirm all non-approved financial actions remain inactive or absent across shortcut tiles and bottom navigation.
 - [x] Remove public navigation links and the Administrator entry from the unauthenticated Player login screen; keep Player-specific navigation available only after a valid Player session exists.
+- [ ] Investigate the rejected active Player credential and complete a secure Agent-mediated password recovery without exposing, retaining, or reusing the password shown in the user-provided screenshot.
+- [ ] Rotate the temporary Player credential that appeared in the user-provided screenshot before any further Player sign-in, then confirm the Player sets a private password that is not shared in chat or screenshots.

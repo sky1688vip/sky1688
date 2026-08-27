@@ -17,6 +17,7 @@ describe("PublicShell player variant", () => {
     expect(markup).toContain("Player content");
     expect(markup).not.toContain("စီမံခန့်ခွဲမှု");
     expect(markup).not.toContain("Dream1000");
+    expect(markup).not.toContain('<a href="/"');
   });
 
   it("retains public navigation in the standard site shell", () => {
@@ -24,5 +25,6 @@ describe("PublicShell player variant", () => {
 
     expect(markup).toContain("စီမံခန့်ခွဲမှု");
     expect(markup).toContain("Dream1000");
+    expect(markup).toContain('<a href="/"');
   });
 });

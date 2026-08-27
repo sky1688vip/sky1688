@@ -24,7 +24,7 @@ export function PublicShell({ children, variant = "default" }: { children: React
       </div>
       <header className="sticky top-0 z-30 border-b border-white/7 bg-[#071a16]/80 backdrop-blur-xl">
         <div className={`mx-auto flex h-[76px] max-w-7xl items-center gap-5 px-4 sm:px-6 ${playerVariant ? "justify-start" : "justify-between"}`}>
-          <Link href="/" className="shrink-0"><SkyMark /></Link>
+          {playerVariant ? <div className="shrink-0" aria-label="SKY1688 Player"><SkyMark /></div> : <Link href="/" className="shrink-0"><SkyMark /></Link>}
           {!playerVariant ? <nav className="hidden items-center gap-1 rounded-full border border-white/8 bg-white/[0.035] p-1 md:flex" aria-label="အဓိက လမ်းညွှန်">
             {links.map(link => (
               <Link
