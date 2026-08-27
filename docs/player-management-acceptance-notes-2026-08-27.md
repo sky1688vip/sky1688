@@ -31,3 +31,5 @@ The controlled Player account was temporarily locked after rejected credential a
 ## Approved internal Unit credit
 
 With explicit user approval, the owning Agent credited **30,000 internal Units** to the active controlled Player using reason `wpay`. The credit used the existing conditional atomic-debit business helper: the Agent balance changed from **90,000** to **60,000 Units**, and the Player balance changed from **10,000** to **40,000 Units**. An append-only `agent_adjustment_credit` ledger record was written with the approved amount and reason. No external payment, bank transfer, wallet, deposit, withdrawal, or wager settlement was performed.
+
+The insufficient-balance safeguard was also exercised without changing data. A requested Agent-to-Player transfer of 1,000,000 Units was rejected because the Agent had only 60,000 Units available. After the rejection, the Agent remained at 60,000 Units, the Player remained at 40,000 Units, and no ledger row was added for the rejected request.
