@@ -19,14 +19,21 @@ export async function createContext(
   let player: PlayerProfile | null = null;
 
   try {
-    const agentSessionUserId = await getAgentSessionUserId(opts.req);
-    const playerSessionProfileId = agentSessionUserId ? null : await getPlayerSessionProfileId(opts.req);
-    if (agentSessionUserId) {
-      user = (await db.getUserById(agentSessionUserId)) ?? null;
-    } else if (playerSessionProfileId) {
+    // A Player can be tested in the same browser that an Agent uses. The
+    // Player credential must win in that situation; otherwise an old Agent
+    // cookie turns every Player request into an Agent-context request.
+    const playerSessionProfileId = await getPlayerSessionProfileId(opts.req);
+    if (playerSessionProfileId) {
       player = await db.getPlayerProfileById(playerSessionProfileId);
-    } else {
-      user = await sdk.authenticateRequest(opts.req);
+    }
+
+    if (!player) {
+      const agentSessionUserId = await getAgentSessionUserId(opts.req);
+      if (agentSessionUserId) {
+        user = (await db.getUserById(agentSessionUserId)) ?? null;
+      } else {
+        user = await sdk.authenticateRequest(opts.req);
+      }
     }
   } catch (error) {
     // Authentication is optional for public procedures.
