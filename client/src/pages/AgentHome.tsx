@@ -1,5 +1,7 @@
-import { useState, type FormEvent } from "react";
+import { Fragment, useState, type FormEvent } from "react";
 import {
+  ArrowDownToLine,
+  ArrowUpFromLine,
   BadgeCheck,
   Ban,
   ClipboardCheck,
@@ -10,12 +12,14 @@ import {
   ListChecks,
   LogOut,
   Menu,
+  RotateCcw,
   ShieldCheck,
   UserPlus,
   Users,
   X,
 } from "lucide-react";
 import { PublicShell } from "@/components/PublicShell";
+import { AgentUnitPanel } from "@/components/AgentUnitPanel";
 import { QueryError, QueryLoading } from "@/components/QueryState";
 import { Button } from "@/components/ui/button";
 import { humanizeError } from "@/lib/admin";
@@ -30,6 +34,7 @@ import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 
 type IssuedInvite = { token: string; playerCode: string; temporaryPassword: string; expiresAt: Date } | null;
+type ResetCredential = { playerCode: string; temporaryPassword: string; temporaryPasswordExpiresAt: Date } | null;
 type PlayerCreateFormInput = {
   playerCode: string;
   password: string;
@@ -49,6 +54,9 @@ type InvitationSummary = {
   status: "issued" | "redeemed" | "revoked";
   expiresAt: Date;
   createdAt: Date;
+  playerProfileId: number | null;
+  playerStatus: "invited" | "active" | "suspended" | null;
+  availableUnits: number;
 };
 type InvitationQueryState = {
   isError: boolean;
@@ -73,6 +81,7 @@ function sectionIcon(section: AgentDashboardSection) {
 export default function AgentHome() {
   const { user, loading, logout } = useAuth();
   const [issuedInvite, setIssuedInvite] = useState<IssuedInvite>(null);
+  const [resetCredential, setResetCredential] = useState<ResetCredential>(null);
   const [copied, setCopied] = useState<"link" | "credentials" | null>(null);
   const [section, setSection] = useState<AgentDashboardSection>("dashboard");
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
@@ -80,6 +89,7 @@ export default function AgentHome() {
   const agent = trpc.accounts.agent.me.useQuery(undefined, { enabled: canLoadAgent });
   const canManageInvites = canLoadAgent && Boolean(agent.data && !agent.data.mustChangePassword);
   const invitations = trpc.accounts.agent.playerInvites.list.useQuery(undefined, { enabled: canManageInvites });
+  const unitOverview = trpc.units.agent.overview.useQuery(undefined, { enabled: canManageInvites });
   const issueInvite = trpc.accounts.agent.playerInvites.create.useMutation({
     onSuccess: async data => {
       setIssuedInvite({ token: data.token, playerCode: data.playerCode, temporaryPassword: data.temporaryPassword, expiresAt: data.expiresAt });
@@ -88,6 +98,16 @@ export default function AgentHome() {
     },
   });
   const revokeInvite = trpc.accounts.agent.playerInvites.revoke.useMutation({ onSuccess: () => invitations.refetch() });
+  const exitCredentialMode = trpc.accounts.agent.exitCredentialMode.useMutation({ onSuccess: () => window.location.assign("/admin/agents") });
+  const setPlayerStatus = trpc.accounts.agent.playerInvites.setStatus.useMutation({ onSuccess: async () => { await Promise.all([invitations.refetch(), unitOverview.refetch()]); } });
+  const resetPlayerCredentials = trpc.accounts.agent.playerInvites.resetCredentials.useMutation({
+    onSuccess: async data => {
+      setResetCredential({ playerCode: data.playerCode, temporaryPassword: data.temporaryPassword, temporaryPasswordExpiresAt: data.temporaryPasswordExpiresAt });
+      await invitations.refetch();
+    },
+  });
+  const transferUnits = trpc.units.agent.transferToPlayer.useMutation({ onSuccess: () => unitOverview.refetch() });
+  const adjustPlayerUnits = trpc.units.agent.adjustPlayer.useMutation({ onSuccess: async () => { await Promise.all([invitations.refetch(), unitOverview.refetch()]); } });
   const invitationUrl = issuedInvite ? getPlayerInvitationUrl(window.location.origin, issuedInvite.token) : null;
   const metrics = calculatePlayerAccountMetrics(invitations.data);
   const selectedItem = getAgentDashboardNavigationItem(section);
@@ -95,6 +115,10 @@ export default function AgentHome() {
   const handleLogout = async () => {
     await logout();
     window.location.assign("/");
+  };
+  const handleReturnToAdmin = () => {
+    if (!window.confirm("Agent credential session ကိုပိတ်ပြီး Admin စာမျက်နှာသို့ပြန်မည်။ Administrator Manus session ကိုမဖျက်ပါ။")) return;
+    exitCredentialMode.mutate();
   };
   const copyInvitation = async () => {
     if (!invitationUrl) return;
@@ -138,6 +162,27 @@ export default function AgentHome() {
         onCopyCredentials={() => void copyPlayerCredentials()}
         onRevoke={id => revokeInvite.mutate({ id })}
         isRevoking={revokeInvite.isPending}
+        resetCredential={resetCredential}
+        onResetCredentials={playerProfileId => resetPlayerCredentials.mutate({ playerProfileId })}
+        isResettingCredentials={resetPlayerCredentials.isPending}
+        resetError={resetPlayerCredentials.isError ? humanizeError(resetPlayerCredentials.error) : null}
+        onSetStatus={(playerProfileId, action) => setPlayerStatus.mutate({ playerProfileId, action })}
+        isSettingStatus={setPlayerStatus.isPending}
+        statusError={setPlayerStatus.isError ? humanizeError(setPlayerStatus.error) : null}
+        onAdjustUnits={input => adjustPlayerUnits.mutate(input)}
+        isAdjustingUnits={adjustPlayerUnits.isPending}
+        adjustmentError={adjustPlayerUnits.isError ? humanizeError(adjustPlayerUnits.error) : null}
+      />;
+    }
+    if (section === "cashInOut") {
+      return <AgentUnitPanel
+        overview={unitOverview.data}
+        isLoading={unitOverview.isLoading}
+        error={unitOverview.isError ? humanizeError(unitOverview.error) : null}
+        onRetry={() => unitOverview.refetch()}
+        onTransfer={input => transferUnits.mutate(input)}
+        isTransferring={transferUnits.isPending}
+        transferError={transferUnits.isError ? humanizeError(transferUnits.error) : null}
       />;
     }
     return <PlannedSection item={selectedItem} onGoToPlayers={() => setSection("playerList")} />;
@@ -147,14 +192,14 @@ export default function AgentHome() {
     <aside className="fixed inset-y-0 left-0 z-40 hidden w-64 flex-col bg-[#0c1615] text-white lg:flex">
       <div className="flex h-24 shrink-0 items-center gap-3 border-b border-white/10 px-6"><BrandLockup /></div>
       <SidebarNav section={section} onSelect={chooseSection} />
-      <SidebarAccount fullName={agent.data.fullName} agentCode={agent.data.agentCode} onLogout={() => void handleLogout()} />
+      <SidebarAccount fullName={agent.data.fullName} agentCode={agent.data.agentCode} onLogout={() => void handleLogout()} onReturnToAdmin={handleReturnToAdmin} isReturningToAdmin={exitCredentialMode.isPending} />
     </aside>
     {mobileSidebarOpen ? <div className="fixed inset-0 z-50 lg:hidden">
       <button aria-label="Menu ပိတ်ရန်" className="absolute inset-0 bg-slate-950/45" onClick={() => setMobileSidebarOpen(false)} />
       <aside className="relative flex h-full w-72 flex-col bg-[#0c1615] text-white shadow-2xl">
         <div className="flex h-20 shrink-0 items-center justify-between border-b border-white/10 px-5"><BrandLockup /><button aria-label="Menu ပိတ်ရန်" onClick={() => setMobileSidebarOpen(false)} className="rounded-lg p-2 text-emerald-50/70 hover:bg-white/10"><X className="h-5 w-5" /></button></div>
         <SidebarNav section={section} onSelect={chooseSection} />
-        <div className="shrink-0 border-t border-white/10 p-4"><Button onClick={() => void handleLogout()} variant="ghost" className="w-full justify-start text-emerald-50/70 hover:bg-white/10 hover:text-white"><LogOut className="mr-2 h-4 w-4" />Agent logout</Button></div>
+        <div className="shrink-0 border-t border-white/10 p-4"><Button onClick={handleReturnToAdmin} disabled={exitCredentialMode.isPending} variant="ghost" className="w-full justify-start text-lime-100/80 hover:bg-white/10 hover:text-lime-100"><LayoutDashboard className="mr-2 h-4 w-4" />Admin သို့ပြန်ရန်</Button><Button onClick={() => void handleLogout()} variant="ghost" className="mt-2 w-full justify-start text-emerald-50/70 hover:bg-white/10 hover:text-white"><LogOut className="mr-2 h-4 w-4" />Agent logout</Button></div>
       </aside>
     </div> : null}
     <main className="min-h-screen lg:ml-64">
@@ -168,8 +213,8 @@ function BrandLockup() {
   return <><div className="grid h-11 w-11 place-items-center rounded-xl bg-lime-200 text-[#0c1615]"><BadgeCheck className="h-6 w-6" /></div><div><p className="text-[10px] font-bold uppercase tracking-[.22em] text-lime-200">SKY1688</p><p className="mt-1 text-sm font-black">AGENT PORTAL</p></div></>;
 }
 
-function SidebarAccount({ fullName, agentCode, onLogout }: { fullName: string; agentCode: string; onLogout: () => void }) {
-  return <div className="shrink-0 border-t border-white/10 p-4"><div className="flex items-center gap-3 rounded-xl bg-white/[.06] p-3"><div className="grid h-9 w-9 place-items-center rounded-full bg-lime-200/15 text-sm font-black text-lime-100">{fullName.charAt(0).toUpperCase()}</div><div className="min-w-0"><p className="truncate text-sm font-bold">{fullName}</p><p className="mt-0.5 truncate font-mono text-[11px] text-emerald-50/50">{agentCode}</p></div></div><Button onClick={onLogout} variant="ghost" className="mt-3 w-full justify-start text-emerald-50/70 hover:bg-white/10 hover:text-white"><LogOut className="mr-2 h-4 w-4" />Agent logout</Button></div>;
+function SidebarAccount({ fullName, agentCode, onLogout, onReturnToAdmin, isReturningToAdmin }: { fullName: string; agentCode: string; onLogout: () => void; onReturnToAdmin: () => void; isReturningToAdmin: boolean }) {
+  return <div className="shrink-0 border-t border-white/10 p-4"><div className="flex items-center gap-3 rounded-xl bg-white/[.06] p-3"><div className="grid h-9 w-9 place-items-center rounded-full bg-lime-200/15 text-sm font-black text-lime-100">{fullName.charAt(0).toUpperCase()}</div><div className="min-w-0"><p className="truncate text-sm font-bold">{fullName}</p><p className="mt-0.5 truncate font-mono text-[11px] text-emerald-50/50">{agentCode}</p></div></div><Button onClick={onReturnToAdmin} disabled={isReturningToAdmin} variant="ghost" className="mt-3 w-full justify-start text-lime-100/80 hover:bg-white/10 hover:text-lime-100"><LayoutDashboard className="mr-2 h-4 w-4" />Admin သို့ပြန်ရန်</Button><Button onClick={onLogout} variant="ghost" className="mt-2 w-full justify-start text-emerald-50/70 hover:bg-white/10 hover:text-white"><LogOut className="mr-2 h-4 w-4" />Agent logout</Button></div>;
 }
 
 function AgentAccessGuard({ icon, title, description, actionHref = "/agent/login", actionLabel = "Agent login ဝင်ရန်" }: { icon: React.ReactNode; title: string; description: string; actionHref?: string; actionLabel?: string }) {
@@ -196,9 +241,9 @@ function PlannedSection({ item, onGoToPlayers }: { item: ReturnType<typeof getAg
   return <div className="mx-auto max-w-3xl py-5 sm:py-12"><section className="border border-[#d8e3f6] bg-white p-7 shadow-[0_8px_24px_rgba(47,101,184,0.07)] sm:p-10"><div className="grid h-12 w-12 place-items-center rounded-xl bg-[#edf4ff] text-[#3979de]"><Icon className="h-6 w-6" /></div><p className="mt-6 text-xs font-bold uppercase tracking-[.16em] text-[#4476bf]">Planned section</p><h2 className="mt-2 text-3xl font-black tracking-tight text-slate-950">{item.label}</h2><p className="mt-4 max-w-2xl text-sm leading-7 text-slate-600">ဒီ menu ကို Agent dashboard တွင်ထည့်ထားပြီးပါပြီ။ လက်ရှိ database၊ API နှင့် transaction workflow ကို မချိတ်ဆက်ရသေးသောကြောင့် အချက်အလက်မဖန်တီး၊ မပြင်ဆင်၊ မလုပ်ဆောင်ပါ။</p>{isCashOrBetting ? <div className="mt-6 border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-800">ဤအပိုင်းသည် ငွေကြေး သို့မဟုတ် ကစားမှုမှတ်တမ်းဆိုင်ရာလုပ်ဆောင်ချက်ဖြစ်နိုင်သဖြင့် အသုံးပြုသူစည်းမျဉ်းများ၊ အသက်ကန့်သတ်ချက်၊ KYC/AML နှင့် သက်ဆိုင်ရာလိုင်စင်လိုအပ်ချက်များကို သတ်မှတ်ပြီးမှ backend workflow ကိုတစ်ခုချင်းစီတည်ဆောက်ပါမည်။</div> : <div className="mt-6 border border-[#d8e3f6] bg-[#f7faff] p-4 text-sm leading-6 text-slate-600">ဒီအပိုင်းအတွက် လိုအပ်သော data fields၊ Agent permission နှင့် action rules ကိုသင်သတ်မှတ်ပေးသောအခါ အလုပ်လုပ်သည့်စာမျက်နှာအဖြစ်ဆက်တည်ဆောက်နိုင်သည်။</div>}<div className="mt-7 flex flex-wrap gap-3"><Button onClick={onGoToPlayers} className="bg-[#3979de] text-white hover:bg-[#2465c8]"><Users className="mr-2 h-4 w-4" />Player account စီမံရန်</Button></div></section></div>;
 }
 
-function PlayerAccountsPanel({ focus, invitations, issuedInvite, invitationUrl, copied, onGoToCreate, onCreate, isCreating, createError, onCopyInvitation, onCopyCredentials, onRevoke, isRevoking }: { focus: "playerList" | "createPlayer"; invitations: InvitationQueryState; issuedInvite: IssuedInvite; invitationUrl: string | null; copied: "link" | "credentials" | null; onGoToCreate: () => void; onCreate: (input: PlayerCreateFormInput) => void; isCreating: boolean; createError: string | null; onCopyInvitation: () => void; onCopyCredentials: () => void; onRevoke: (id: number) => void; isRevoking: boolean }) {
+function PlayerAccountsPanel({ focus, invitations, issuedInvite, invitationUrl, copied, onGoToCreate, onCreate, isCreating, createError, onCopyInvitation, onCopyCredentials, onRevoke, isRevoking, resetCredential, onResetCredentials, isResettingCredentials, resetError, onSetStatus, isSettingStatus, statusError, onAdjustUnits, isAdjustingUnits, adjustmentError }: { focus: "playerList" | "createPlayer"; invitations: InvitationQueryState; issuedInvite: IssuedInvite; invitationUrl: string | null; copied: "link" | "credentials" | null; onGoToCreate: () => void; onCreate: (input: PlayerCreateFormInput) => void; isCreating: boolean; createError: string | null; onCopyInvitation: () => void; onCopyCredentials: () => void; onRevoke: (id: number) => void; isRevoking: boolean; resetCredential: ResetCredential; onResetCredentials: (playerProfileId: number) => void; isResettingCredentials: boolean; resetError: string | null; onSetStatus: (playerProfileId: number, action: "suspend" | "reactivate") => void; isSettingStatus: boolean; statusError: string | null; onAdjustUnits: (input: { playerProfileId: number; direction: "credit" | "debit"; amount: number; note: string }) => void; isAdjustingUnits: boolean; adjustmentError: string | null }) {
   const isCreateMode = focus === "createPlayer";
-  return <div><div className="flex flex-wrap items-start justify-between gap-5"><div><p className="text-xs font-bold uppercase tracking-[.18em] text-[#4476bf]">{isCreateMode ? "Create user" : "User list"}</p><h2 className="mt-2 text-3xl font-black tracking-tight text-slate-950 sm:text-4xl">{isCreateMode ? "Player account အသစ်ထုတ်ရန်" : "Player ID နှင့် link စီမံရန်"}</h2><p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600">Player account တစ်ခုစီအတွက် Agent က Player ID, initial password နှင့် အခြေခံ profile ကိုထည့်သွင်းပေးရမည်။</p></div>{isCreateMode ? null : <Button onClick={onGoToCreate} className="bg-[#3979de] text-white hover:bg-[#2465c8]"><UserPlus className="mr-2 h-4 w-4" />Player account အသစ်ထုတ်ရန်</Button>}</div>{isCreateMode ? <PlayerCreateForm onCreate={onCreate} isCreating={isCreating} error={createError} /> : null}{issuedInvite && invitationUrl ? <IssuedCredentialPanel issuedInvite={issuedInvite} invitationUrl={invitationUrl} copied={copied} onCopyInvitation={onCopyInvitation} onCopyCredentials={onCopyCredentials} /> : null}<PlayerListTable invitations={invitations} onRevoke={onRevoke} isRevoking={isRevoking} /></div>;
+  return <div><div className="flex flex-wrap items-start justify-between gap-5"><div><p className="text-xs font-bold uppercase tracking-[.18em] text-[#4476bf]">{isCreateMode ? "Create user" : "User list"}</p><h2 className="mt-2 text-3xl font-black tracking-tight text-slate-950 sm:text-4xl">{isCreateMode ? "Player account အသစ်ထုတ်ရန်" : "Player account စီမံရန်"}</h2><p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600">Player ID၊ Unit လက်ကျန်၊ account status နှင့် internal Unit adjustment ကို ကိုယ့် Agent အောက်က Player များအတွက်သာစီမံနိုင်သည်။ Password အဟောင်းကိုပြန်မပြဘဲ reset credential အသစ်ထုတ်ပေးနိုင်သည်။</p></div>{isCreateMode ? null : <Button onClick={onGoToCreate} className="bg-[#3979de] text-white hover:bg-[#2465c8]"><UserPlus className="mr-2 h-4 w-4" />Player account အသစ်ထုတ်ရန်</Button>}</div>{isCreateMode ? <PlayerCreateForm onCreate={onCreate} isCreating={isCreating} error={createError} /> : null}{issuedInvite && invitationUrl ? <IssuedCredentialPanel issuedInvite={issuedInvite} invitationUrl={invitationUrl} copied={copied} onCopyInvitation={onCopyInvitation} onCopyCredentials={onCopyCredentials} /> : null}{resetCredential ? <ResetCredentialPanel credential={resetCredential} /> : null}<PlayerListTable invitations={invitations} onRevoke={onRevoke} isRevoking={isRevoking} onResetCredentials={onResetCredentials} isResettingCredentials={isResettingCredentials} resetError={resetError} onSetStatus={onSetStatus} isSettingStatus={isSettingStatus} statusError={statusError} onAdjustUnits={onAdjustUnits} isAdjustingUnits={isAdjustingUnits} adjustmentError={adjustmentError} /></div>;
 }
 
 function PlayerCreateForm({ onCreate, isCreating, error }: { onCreate: (input: PlayerCreateFormInput) => void; isCreating: boolean; error: string | null }) {
@@ -220,8 +265,19 @@ function IssuedCredentialPanel({ issuedInvite, invitationUrl, copied, onCopyInvi
   return <section className="mt-6 border border-[#8cbee7] bg-[#eef7ff] p-5 sm:p-6"><div className="flex items-start justify-between gap-4"><div><p className="text-xs font-bold uppercase tracking-[.16em] text-[#2570bd]">Current session only</p><h3 className="mt-2 text-xl font-black text-slate-950">ယခုထုတ်ပေးထားသော Player login အချက်အလက်</h3></div><KeyRound className="h-6 w-6 text-[#2570bd]" /></div><div className="mt-5 grid gap-4 sm:grid-cols-2"><CredentialField label="Player ID" value={issuedInvite.playerCode} /><CredentialField label="Initial password" value={issuedInvite.temporaryPassword} /></div><div className="mt-5 border-t border-[#c8dbf2] pt-4"><p className="text-xs font-bold text-slate-600">Player invitation link</p><p className="mt-2 break-all font-mono text-xs leading-6 text-slate-700">{invitationUrl}</p></div><div className="mt-5 flex flex-wrap gap-3"><Button type="button" onClick={onCopyInvitation} className="bg-[#3979de] text-white hover:bg-[#2465c8]"><Copy className="mr-2 h-4 w-4" />{copied === "link" ? "Link ကူးပြီးပါပြီ" : "Link ကူးရန်"}</Button><Button type="button" onClick={onCopyCredentials} variant="outline" className="border-[#8bafe4] text-[#1e5fb8] hover:bg-white"><Copy className="mr-2 h-4 w-4" />{copied === "credentials" ? "ကူးပြီးပါပြီ" : "ID / password ကူးရန်"}</Button></div><p className="mt-4 text-xs leading-5 text-slate-500">Player သည် link ကိုဖွင့်ပြီး Player ID/password ဖြင့်ဝင်ရမည်။ ပထမဝင်ရောက်ပြီးနောက် password အသစ်ပြောင်းခိုင်းမည်။</p></section>;
 }
 
-function PlayerListTable({ invitations, onRevoke, isRevoking }: { invitations: InvitationQueryState; onRevoke: (id: number) => void; isRevoking: boolean }) {
-  return <section className="mt-6 overflow-hidden border border-[#d8e3f6] bg-white"><div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#d8e3f6] px-5 py-4"><div><h3 className="font-black text-slate-950">ထုတ်ပေးထားသော Player account များ</h3><p className="mt-1 text-xs text-slate-500">Bank account number ကို list မှာမပြပါ။</p></div><ListChecks className="h-5 w-5 text-[#3979de]" /></div>{invitations.isLoading ? <div className="p-7"><QueryLoading /></div> : invitations.data?.length ? <div className="overflow-x-auto"><table className="min-w-full text-left"><thead className="bg-[#f7faff] text-xs font-bold text-slate-500"><tr><th className="px-5 py-3">Player ID</th><th className="px-5 py-3">Phone</th><th className="px-5 py-3">Bank Type</th><th className="px-5 py-3">Streamer</th><th className="px-5 py-3">Status</th><th className="px-5 py-3">Expires</th><th className="px-5 py-3 text-right">Action</th></tr></thead><tbody className="divide-y divide-slate-100">{invitations.data.map(invitation => <tr key={invitation.id} className="text-sm"><td className="px-5 py-4 font-mono font-bold text-slate-900">{invitation.playerCode || `Player #${invitation.id}`}</td><td className="px-5 py-4 text-slate-600">{invitation.phone || "—"}</td><td className="px-5 py-4 text-slate-600">{invitation.bankType || "—"}</td><td className="px-5 py-4 text-slate-600">{invitation.streamerAccount || "—"}</td><td className="px-5 py-4"><span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold ${invitation.status === "issued" ? "bg-amber-50 text-amber-700" : invitation.status === "redeemed" ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>{invitation.status === "issued" ? "အသုံးပြုရန်ရှိ" : invitation.status === "redeemed" ? "ဖွင့်ပြီး" : "ပယ်ဖျက်ပြီး"}</span></td><td className="px-5 py-4 text-slate-600">{formatDate(invitation.expiresAt)}</td><td className="px-5 py-4 text-right">{invitation.status === "issued" ? <Button onClick={() => onRevoke(invitation.id)} disabled={isRevoking} variant="outline" size="sm" className="border-red-200 text-red-700 hover:bg-red-50"><Ban className="mr-1.5 h-3.5 w-3.5" />ပယ်ဖျက်ရန်</Button> : "—"}</td></tr>)}</tbody></table></div> : <div className="p-9 text-center"><Link2 className="mx-auto h-7 w-7 text-[#3979de]" /><h4 className="mt-3 font-black text-slate-950">Player account မထုတ်ရသေးပါ</h4><p className="mt-2 text-sm text-slate-600">Create user ကိုရွေးပြီး Player link၊ Player ID နှင့် initial password ကိုထုတ်ပေးပါ။</p></div>}</section>;
+function ResetCredentialPanel({ credential }: { credential: NonNullable<ResetCredential> }) {
+  return <section className="mt-6 border border-amber-200 bg-amber-50 p-5 sm:p-6"><div className="flex items-start gap-3"><KeyRound className="mt-0.5 h-5 w-5 text-amber-700" /><div><p className="text-xs font-bold uppercase tracking-[.16em] text-amber-700">Current session only</p><h3 className="mt-2 text-lg font-black text-slate-950">Player temporary password အသစ်</h3><p className="mt-2 text-sm leading-6 text-slate-700">Password အဟောင်းကိုပြန်မပြပါ။ အောက်က temporary password ကို Player ထံလုံခြုံစွာပေးပြီး ပထမဝင်ရောက်ပြီးနောက်ပြောင်းခိုင်းပါ။</p></div></div><div className="mt-4 grid gap-3 sm:grid-cols-2"><CredentialField label="Player ID" value={credential.playerCode} /><CredentialField label="Temporary password" value={credential.temporaryPassword} /></div><p className="mt-3 text-xs text-slate-600">သက်တမ်းကုန်ချိန်: {formatDate(credential.temporaryPasswordExpiresAt)}</p></section>;
+}
+
+function PlayerListTable({ invitations, onRevoke, isRevoking, onResetCredentials, isResettingCredentials, resetError, onSetStatus, isSettingStatus, statusError, onAdjustUnits, isAdjustingUnits, adjustmentError }: { invitations: InvitationQueryState; onRevoke: (id: number) => void; isRevoking: boolean; onResetCredentials: (playerProfileId: number) => void; isResettingCredentials: boolean; resetError: string | null; onSetStatus: (playerProfileId: number, action: "suspend" | "reactivate") => void; isSettingStatus: boolean; statusError: string | null; onAdjustUnits: (input: { playerProfileId: number; direction: "credit" | "debit"; amount: number; note: string }) => void; isAdjustingUnits: boolean; adjustmentError: string | null }) {
+  const [adjustingId, setAdjustingId] = useState<number | null>(null);
+  const [adjustment, setAdjustment] = useState({ direction: "credit" as "credit" | "debit", amount: "", note: "" });
+  const submitAdjustment = (playerProfileId: number) => {
+    if (!window.confirm(`${adjustment.direction === "credit" ? "Unit ဖြည့်" : "Unit နုတ်"}ရန် အတည်ပြုပါ။ Player balance နှင့် immutable ledger ကိုပြောင်းလဲမည်။`)) return;
+    onAdjustUnits({ playerProfileId, direction: adjustment.direction, amount: Number(adjustment.amount), note: adjustment.note.trim() });
+  };
+  const statusLabel = (invitation: InvitationSummary) => invitation.playerStatus === "active" ? "ဖွင့်ထား" : invitation.playerStatus === "suspended" ? "ပိတ်ထား" : invitation.status === "issued" ? "အသုံးပြုရန်ရှိ" : invitation.status === "revoked" ? "ပယ်ဖျက်ပြီး" : "မရရှိ";
+  return <section className="mt-6 overflow-hidden border border-[#d8e3f6] bg-white"><div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#d8e3f6] px-5 py-4"><div><h3 className="font-black text-slate-950">ထုတ်ပေးထားသော Player account များ</h3><p className="mt-1 text-xs text-slate-500">Unit အဝင်/အထွက်တိုင်း reason နှင့် audit ledger ထဲသို့မှတ်တမ်းဝင်သည်။ Bank account number နှင့် password အဟောင်းကိုမပြပါ။</p></div><ListChecks className="h-5 w-5 text-[#3979de]" /></div>{resetError || statusError || adjustmentError ? <p className="m-5 border border-red-200 bg-red-50 p-3 text-sm text-red-700">{resetError || statusError || adjustmentError}</p> : null}{invitations.isLoading ? <div className="p-7"><QueryLoading /></div> : invitations.data?.length ? <div className="overflow-x-auto"><table className="min-w-full text-left"><thead className="bg-[#f7faff] text-xs font-bold text-slate-500"><tr><th className="px-5 py-3">Player ID</th><th className="px-5 py-3">Unit လက်ကျန်</th><th className="px-5 py-3">Phone</th><th className="px-5 py-3">Bank Type</th><th className="px-5 py-3">Status</th><th className="px-5 py-3">Expires</th><th className="px-5 py-3 text-right">Action</th></tr></thead><tbody className="divide-y divide-slate-100">{invitations.data.map(invitation => <Fragment key={invitation.id}><tr className="text-sm"><td className="px-5 py-4 font-mono font-bold text-slate-900">{invitation.playerCode || `Player #${invitation.id}`}</td><td className="px-5 py-4 font-mono font-bold text-[#1e5fb8]">{invitation.availableUnits}</td><td className="px-5 py-4 text-slate-600">{invitation.phone || "—"}</td><td className="px-5 py-4 text-slate-600">{invitation.bankType || "—"}</td><td className="px-5 py-4"><span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold ${invitation.playerStatus === "active" ? "bg-emerald-50 text-emerald-700" : invitation.playerStatus === "suspended" ? "bg-red-50 text-red-700" : "bg-amber-50 text-amber-700"}`}>{statusLabel(invitation)}</span></td><td className="px-5 py-4 text-slate-600">{formatDate(invitation.expiresAt)}</td><td className="px-5 py-4"><div className="flex justify-end gap-2">{invitation.status === "issued" ? <Button onClick={() => onRevoke(invitation.id)} disabled={isRevoking} variant="outline" size="sm" className="border-red-200 text-red-700 hover:bg-red-50"><Ban className="mr-1.5 h-3.5 w-3.5" />ပယ်ဖျက်ရန်</Button> : null}{invitation.playerProfileId && invitation.playerStatus === "active" ? <><Button onClick={() => { if (window.confirm("Player account ကိုပိတ်မည်။ Player login ကိုတားမည်။")) onSetStatus(invitation.playerProfileId!, "suspend"); }} disabled={isSettingStatus} variant="outline" size="sm" className="border-red-200 text-red-700 hover:bg-red-50"><Ban className="mr-1.5 h-3.5 w-3.5" />ပိတ်ရန်</Button><Button onClick={() => { if (window.confirm("Temporary password အသစ်ထုတ်မည်။ Password အဟောင်းကိုပြန်မပြနိုင်ပါ။")) onResetCredentials(invitation.playerProfileId!); }} disabled={isResettingCredentials} variant="outline" size="sm" className="border-amber-200 text-amber-800 hover:bg-amber-50"><RotateCcw className="mr-1.5 h-3.5 w-3.5" />Password reset</Button><Button onClick={() => { setAdjustingId(adjustingId === invitation.id ? null : invitation.id); setAdjustment({ direction: "credit", amount: "", note: "" }); }} size="sm" className="bg-[#3979de] text-white hover:bg-[#2465c8]"><ArrowDownToLine className="mr-1.5 h-3.5 w-3.5" />Unit</Button></> : null}{invitation.playerProfileId && invitation.playerStatus === "suspended" && invitation.status === "redeemed" ? <Button onClick={() => { if (window.confirm("Player account ကိုပြန်ဖွင့်မည်။")) onSetStatus(invitation.playerProfileId!, "reactivate"); }} disabled={isSettingStatus} size="sm" className="bg-emerald-600 text-white hover:bg-emerald-700"><BadgeCheck className="mr-1.5 h-3.5 w-3.5" />ဖွင့်ရန်</Button> : null}</div></td></tr>{adjustingId === invitation.id && invitation.playerProfileId ? <tr><td colSpan={7} className="bg-[#f7faff] px-5 py-5"><div className="grid gap-3 md:grid-cols-[150px_150px_minmax(0,1fr)_auto]"><select value={adjustment.direction} onChange={event => setAdjustment(current => ({ ...current, direction: event.target.value as "credit" | "debit" }))} className="h-10 border border-slate-300 bg-white px-3 text-sm"><option value="credit">Unit ဖြည့်ရန်</option><option value="debit">Unit နုတ်ရန်</option></select><input type="number" min="1" max="1000000" value={adjustment.amount} onChange={event => setAdjustment(current => ({ ...current, amount: event.target.value }))} className="h-10 border border-slate-300 bg-white px-3 text-sm" placeholder="Unit amount" /><input value={adjustment.note} onChange={event => setAdjustment(current => ({ ...current, note: event.target.value }))} className="h-10 border border-slate-300 bg-white px-3 text-sm" placeholder="Reason (required)" /><Button onClick={() => submitAdjustment(invitation.playerProfileId!)} disabled={isAdjustingUnits || !adjustment.amount || adjustment.note.trim().length < 3} className="bg-[#3979de] text-white hover:bg-[#2465c8]">{adjustment.direction === "credit" ? <ArrowDownToLine className="mr-1.5 h-3.5 w-3.5" /> : <ArrowUpFromLine className="mr-1.5 h-3.5 w-3.5" />}{isAdjustingUnits ? "လုပ်နေသည်…" : "အတည်ပြု"}</Button></div></td></tr> : null}</Fragment>)}</tbody></table></div> : <div className="p-9 text-center"><Link2 className="mx-auto h-7 w-7 text-[#3979de]" /><h4 className="mt-3 font-black text-slate-950">Player account မထုတ်ရသေးပါ</h4><p className="mt-2 text-sm text-slate-600">Create user ကိုရွေးပြီး Player link၊ Player ID နှင့် initial password ကိုထုတ်ပေးပါ။</p></div>}</section>;
 }
 
 function CredentialField({ label, value }: { label: string; value: string }) {

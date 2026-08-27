@@ -80,5 +80,41 @@ export const playerInviteRevokeSchema = z.object({
   id: z.number().int().positive(),
 });
 
+const unitAmountSchema = z.number().int().positive().max(1_000_000, "A single Unit transaction cannot exceed 1,000,000 Units.");
+const unitNoteSchema = optionalText(240);
+
+export const adminUnitIssueSchema = z.object({
+  agentId: z.number().int().positive(),
+  amount: unitAmountSchema,
+  note: unitNoteSchema,
+});
+
+export const agentPlayerUnitTransferSchema = z.object({
+  playerProfileId: z.number().int().positive(),
+  amount: unitAmountSchema,
+  note: unitNoteSchema,
+});
+
+export const playerAccountStatusSchema = z.object({
+  playerProfileId: z.number().int().positive(),
+  action: z.enum(["suspend", "reactivate"]),
+});
+
+export const playerCredentialResetSchema = z.object({
+  playerProfileId: z.number().int().positive(),
+});
+
+export const agentPlayerUnitAdjustmentSchema = z.object({
+  playerProfileId: z.number().int().positive(),
+  direction: z.enum(["credit", "debit"]),
+  amount: unitAmountSchema,
+  note: z.string().trim().min(3, "A reason is required for Unit adjustments.").max(240),
+});
+
 export type AgentCreateInput = z.infer<typeof agentCreateSchema>;
 export type PlayerInviteCreateInput = z.infer<typeof playerInviteCreateSchema>;
+export type AdminUnitIssueInput = z.infer<typeof adminUnitIssueSchema>;
+export type AgentPlayerUnitTransferInput = z.infer<typeof agentPlayerUnitTransferSchema>;
+export type PlayerAccountStatusInput = z.infer<typeof playerAccountStatusSchema>;
+export type PlayerCredentialResetInput = z.infer<typeof playerCredentialResetSchema>;
+export type AgentPlayerUnitAdjustmentInput = z.infer<typeof agentPlayerUnitAdjustmentSchema>;

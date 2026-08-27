@@ -198,6 +198,71 @@ export const playerInvitations = mysqlTable(
   ],
 );
 
+/**
+ * Current internal Unit balances. The only supported owners are active Agents
+ * and Player profiles; balance changes are paired with immutable ledger rows.
+ */
+export const unitBalances = mysqlTable(
+  "unit_balances",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    ownerType: mysqlEnum("ownerType", ["agent", "player"]).notNull(),
+    ownerId: int("ownerId").notNull(),
+    availableUnits: int("availableUnits").default(0).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  table => [
+    uniqueIndex("unit_balances_owner_unique").on(table.ownerType, table.ownerId),
+    index("unit_balances_owner_type_units_index").on(table.ownerType, table.availableUnits),
+  ],
+);
+
+/**
+ * Append-only audit rows for internal Unit issuance and transfers. No procedure
+ * updates or deletes these records.
+ */
+export const unitTransactions = mysqlTable(
+  "unit_transactions",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    transactionType: mysqlEnum("transactionType", ["admin_issue", "agent_transfer", "agent_adjustment_credit", "agent_adjustment_debit"]).notNull(),
+    amount: int("amount").notNull(),
+    fromOwnerType: mysqlEnum("fromOwnerType", ["system", "agent", "player"]).notNull(),
+    fromOwnerId: int("fromOwnerId"),
+    toOwnerType: mysqlEnum("toOwnerType", ["agent", "player"]).notNull(),
+    toOwnerId: int("toOwnerId").notNull(),
+    performedByUserId: int("performedByUserId").notNull(),
+    note: varchar("note", { length: 240 }),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  table => [
+    index("unit_transactions_to_owner_created_index").on(table.toOwnerType, table.toOwnerId, table.createdAt),
+    index("unit_transactions_from_owner_created_index").on(table.fromOwnerType, table.fromOwnerId, table.createdAt),
+    index("unit_transactions_performed_created_index").on(table.performedByUserId, table.createdAt),
+  ],
+);
+
+/**
+ * Append-only audit events for Agent-controlled Player account status and
+ * credential resets. Existing passwords are never recoverable or recorded.
+ */
+export const playerAccountEvents = mysqlTable(
+  "player_account_events",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    playerProfileId: int("playerProfileId").notNull(),
+    agentId: int("agentId").notNull(),
+    eventType: mysqlEnum("eventType", ["suspended", "reactivated", "password_reset"]).notNull(),
+    performedByUserId: int("performedByUserId").notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  table => [
+    index("player_account_events_profile_created_index").on(table.playerProfileId, table.createdAt),
+    index("player_account_events_agent_created_index").on(table.agentId, table.createdAt),
+  ],
+);
+
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 export type DreamCategory = typeof dreamCategories.$inferSelect;
@@ -206,3 +271,6 @@ export type DreamEntry = typeof dreamEntries.$inferSelect;
 export type Agent = typeof agents.$inferSelect;
 export type PlayerProfile = typeof playerProfiles.$inferSelect;
 export type PlayerInvitation = typeof playerInvitations.$inferSelect;
+export type UnitBalance = typeof unitBalances.$inferSelect;
+export type UnitTransaction = typeof unitTransactions.$inferSelect;
+export type PlayerAccountEvent = typeof playerAccountEvents.$inferSelect;

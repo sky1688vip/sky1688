@@ -1,32 +1,154 @@
 import { useState } from "react";
-import { ArrowRight, CircleCheck, KeyRound, Link2, LogOut, UserRound } from "lucide-react";
+import {
+  ArrowLeft,
+  ChevronRight,
+  CircleUserRound,
+  Eye,
+  EyeOff,
+  Gift,
+  History,
+  House,
+  KeyRound,
+  LayoutGrid,
+  LogOut,
+  NotebookText,
+  RefreshCw,
+  ShieldCheck,
+  UserRound,
+  WalletCards,
+} from "lucide-react";
 import { PublicShell } from "@/components/PublicShell";
-import { QueryError, QueryLoading } from "@/components/QueryState";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { humanizeError } from "@/lib/admin";
 import { trpc } from "@/lib/trpc";
 
+type PlayerView = "home" | "profile" | "units";
+
+function formatUnits(value: number) {
+  return new Intl.NumberFormat("en-US").format(value);
+}
+
+function formatTransactionType(type: "admin_issue" | "agent_transfer" | "agent_adjustment_credit" | "agent_adjustment_debit") {
+  if (type === "agent_transfer") return "Agent မှ Unit ဖြည့်ပေးမှု";
+  if (type === "agent_adjustment_credit") return "Agent မှ Unit ထပ်ဖြည့်မှု";
+  if (type === "agent_adjustment_debit") return "Agent မှ Unit ပြန်နှုတ်မှု";
+  return "Unit မှတ်တမ်း";
+}
+
+function formatTransactionDirection(type: "admin_issue" | "agent_transfer" | "agent_adjustment_credit" | "agent_adjustment_debit") {
+  return type === "agent_adjustment_debit" ? "−" : "+";
+}
+
 export default function PlayerAccount() {
-  const [playerCode, setPlayerCode] = useState("");
+  const [playerCode, setPlayerCode] = useState(() => window.localStorage.getItem("sky1688_saved_player_code") ?? "");
   const [password, setPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
+  const [rememberPlayerId, setRememberPlayerId] = useState(Boolean(window.localStorage.getItem("sky1688_saved_player_code")));
+  const [view, setView] = useState<PlayerView>("home");
   const session = trpc.accounts.player.session.useQuery(undefined, { retry: false });
+  const unitOverview = trpc.units.player.overview.useQuery(undefined, { enabled: Boolean(session.data && !session.data.mustChangePassword), retry: false });
   const login = trpc.accounts.player.login.useMutation({
-    onSuccess: () => { setError(null); setPassword(""); session.refetch(); },
+    onSuccess: () => {
+      if (rememberPlayerId) window.localStorage.setItem("sky1688_saved_player_code", playerCode.trim().toUpperCase());
+      else window.localStorage.removeItem("sky1688_saved_player_code");
+      setError(null);
+      setPassword("");
+      // A full navigation makes the newly written httpOnly credential cookie available to the next context request.
+      window.location.assign("/player");
+    },
     onError: failure => setError(humanizeError(failure)),
   });
   const changePassword = trpc.accounts.player.changePassword.useMutation({
-    onSuccess: () => { setError(null); setNewPassword(""); setConfirmPassword(""); session.refetch(); },
+    onSuccess: () => {
+      setError(null);
+      setNewPassword("");
+      setConfirmPassword("");
+      window.location.assign("/player");
+    },
     onError: failure => setError(humanizeError(failure)),
   });
-  const logout = trpc.accounts.player.logout.useMutation({
-    onSuccess: () => { session.refetch(); window.location.assign("/"); },
-  });
+  const logout = trpc.accounts.player.logout.useMutation({ onSuccess: () => window.location.assign("/player") });
   const profile = session.data;
 
-  return <PublicShell><div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 sm:py-16"><div className="max-w-3xl"><p className="eyebrow">PLAYER ACCOUNT</p><h1 className="mt-4 font-display text-4xl font-black tracking-tight text-white sm:text-6xl">သင့် SKY1688<br /><span className="text-lime-200">Player account</span></h1><p className="mt-5 max-w-2xl text-base leading-7 text-emerald-50/65 sm:text-lg">Player account ကို Agent ထုတ်ပေးသော link၊ Player ID နှင့် password ဖြင့်သာအသုံးပြုနိုင်သည်။ Manus login မလိုအပ်ပါ။ wallet၊ payment၊ transfer နှင့် wagering function မပါဝင်ပါ။</p></div><section className="golden-panel mt-10 max-w-3xl p-6 sm:p-8">{session.isLoading ? <QueryLoading /> : session.isError ? <QueryError label={humanizeError(session.error)} onRetry={() => session.refetch()} /> : !profile ? <form onSubmit={event => { event.preventDefault(); setError(null); login.mutate({ playerCode, password }); }}><div className="text-center"><UserRound className="mx-auto h-8 w-8 text-lime-200" /><h2 className="mt-4 text-2xl font-black text-white">Player ID ဖြင့်ဝင်ပါ</h2><p className="mt-3 text-sm leading-6 text-emerald-50/65">Agent ပေးသော Player link ကိုပထမအကြိမ်အသုံးပြုပြီးသားဖြစ်ပါက Player ID/password ဖြင့်ဤနေရာမှပြန်ဝင်နိုင်သည်။ Account အသစ်ဖွင့်ရန် Agent link မရှိမဖြစ်လိုအပ်သည်။</p></div><div className="mt-7 grid gap-5"><div className="grid gap-2"><Label htmlFor="existing-player-code" className="text-emerald-50/80">Player ID</Label><Input id="existing-player-code" value={playerCode} onChange={event => setPlayerCode(event.target.value)} autoComplete="username" required className="border-white/15 bg-white/[.05] text-white" /></div><div className="grid gap-2"><Label htmlFor="existing-player-password" className="text-emerald-50/80">Password</Label><Input id="existing-player-password" type="password" value={password} onChange={event => setPassword(event.target.value)} autoComplete="current-password" required className="border-white/15 bg-white/[.05] text-white" /></div></div>{error ? <p className="mt-5 border border-red-300/25 bg-red-300/10 p-3 text-sm text-red-100">{error}</p> : null}<Button type="submit" disabled={login.isPending} className="mt-6 w-full bg-lime-200 text-[#09221c] hover:bg-lime-100"><KeyRound className="mr-2 h-4 w-4" />{login.isPending ? "ဝင်ရောက်နေသည်…" : "Player account ဝင်ရန်"}</Button></form> : profile.mustChangePassword ? <form onSubmit={event => { event.preventDefault(); if (newPassword !== confirmPassword) { setError("Password နှစ်ခုတူညီရပါမည်။"); return; } setError(null); changePassword.mutate({ newPassword }); }}><div className="text-center"><KeyRound className="mx-auto h-8 w-8 text-lime-200" /><h2 className="mt-4 text-2xl font-black text-white">Password အသစ်ပြောင်းရန်လိုအပ်သည်</h2><p className="mt-3 text-sm leading-6 text-emerald-50/65">Agent ပေးသော initial password ကိုဆက်မသုံးရန် သင့်ကိုယ်ပိုင် password အသစ်သတ်မှတ်ပါ။</p></div><div className="mt-7 grid gap-5"><div className="grid gap-2"><Label htmlFor="new-player-password" className="text-emerald-50/80">Password အသစ်</Label><Input id="new-player-password" type="password" value={newPassword} onChange={event => setNewPassword(event.target.value)} autoComplete="new-password" required className="border-white/15 bg-white/[.05] text-white" /></div><div className="grid gap-2"><Label htmlFor="confirm-player-password" className="text-emerald-50/80">Password အသစ်အတည်ပြုရန်</Label><Input id="confirm-player-password" type="password" value={confirmPassword} onChange={event => setConfirmPassword(event.target.value)} autoComplete="new-password" required className="border-white/15 bg-white/[.05] text-white" /></div></div>{error ? <p className="mt-5 border border-red-300/25 bg-red-300/10 p-3 text-sm text-red-100">{error}</p> : null}<Button type="submit" disabled={changePassword.isPending} className="mt-6 w-full bg-lime-200 text-[#09221c] hover:bg-lime-100"><KeyRound className="mr-2 h-4 w-4" />{changePassword.isPending ? "Password ပြောင်းနေသည်…" : "Password အသစ်သတ်မှတ်ရန်"}</Button></form> : <div><div className="flex flex-wrap items-start justify-between gap-5"><div><p className="text-xs font-bold uppercase tracking-[.18em] text-lime-200">ACTIVE PROFILE</p><h2 className="mt-2 text-2xl font-black text-white">{profile.displayName || profile.playerCode || "SKY1688 Player"}</h2><p className="mt-2 text-sm text-emerald-50/60">Player ID credential ဖြင့်ဝင်ရောက်ထားသည် · Profile status: active</p></div><Button onClick={() => logout.mutate()} disabled={logout.isPending} variant="outline" className="admin-action"><LogOut className="mr-2 h-4 w-4" />Player logout</Button></div><CircleCheck className="mt-7 h-10 w-10 text-lime-200" /><div className="mt-7 grid gap-3 sm:grid-cols-2"><a href="/results" className="group border border-white/10 bg-white/[.03] p-5"><p className="text-sm font-bold text-white">2D / 3D result ကြည့်ရန်</p><p className="mt-2 text-sm leading-6 text-emerald-50/55">Admin publish ပြုလုပ်ထားသော result များကိုဖတ်ပါ။</p><span className="mt-4 inline-flex items-center text-sm font-bold text-lime-200">Result သို့သွားရန် <ArrowRight className="ml-1 h-4 w-4" /></span></a><a href="/dreams" className="group border border-white/10 bg-white/[.03] p-5"><p className="text-sm font-bold text-white">Dream1000 ကြည့်ရန်</p><p className="mt-2 text-sm leading-6 text-emerald-50/55">Published dream content များကိုရှာဖွေဖတ်ရှုပါ။</p><span className="mt-4 inline-flex items-center text-sm font-bold text-lime-200">Dream1000 သို့သွားရန် <ArrowRight className="ml-1 h-4 w-4" /></span></a></div></div>}</section><p className="mt-5 text-center text-xs text-emerald-50/45"><Link2 className="mr-1 inline h-3.5 w-3.5" />Player account အသစ်ဖွင့်ရန် Agent invitation link လိုအပ်သည်။</p></div></PublicShell>;
+  const submitLogin = (event: React.FormEvent) => {
+    event.preventDefault();
+    setError(null);
+    login.mutate({ playerCode, password });
+  };
+
+  const submitPasswordChange = (event: React.FormEvent) => {
+    event.preventDefault();
+    if (newPassword !== confirmPassword) {
+      setError("Password နှစ်ခုတူညီရပါမည်။");
+      return;
+    }
+    setError(null);
+    changePassword.mutate({ newPassword });
+  };
+
+  if (session.isLoading) return <PublicShell><PlayerShell><LoadingPanel /></PlayerShell></PublicShell>;
+  if (session.isError) return <PublicShell><PlayerShell><ErrorPanel label={humanizeError(session.error)} onRetry={() => session.refetch()} /></PlayerShell></PublicShell>;
+  if (!profile) return <PublicShell><PlayerShell><PlayerLoginForm playerCode={playerCode} password={password} error={error} isPending={login.isPending} rememberPlayerId={rememberPlayerId} showPassword={showPassword} onPlayerCodeChange={setPlayerCode} onPasswordChange={setPassword} onRememberChange={setRememberPlayerId} onShowPasswordChange={setShowPassword} onSubmit={submitLogin} /></PlayerShell></PublicShell>;
+  if (profile.mustChangePassword) return <PublicShell><PlayerShell><PasswordChangeForm newPassword={newPassword} confirmPassword={confirmPassword} error={error} isPending={changePassword.isPending} onNewPasswordChange={setNewPassword} onConfirmPasswordChange={setConfirmPassword} onSubmit={submitPasswordChange} /></PlayerShell></PublicShell>;
+
+  return <PublicShell><PlayerShell><PlayerMobileApp profile={profile} view={view} units={unitOverview.data} unitsLoading={unitOverview.isLoading} unitsError={unitOverview.isError ? humanizeError(unitOverview.error) : null} onRetryUnits={() => unitOverview.refetch()} onNavigate={setView} onLogout={() => logout.mutate()} isLoggingOut={logout.isPending} /></PlayerShell></PublicShell>;
 }
+
+function PlayerShell({ children }: { children: React.ReactNode }) {
+  return <div className="mx-auto min-h-[calc(100vh-76px)] max-w-md px-4 py-6 pb-28 sm:px-6 sm:py-10">{children}</div>;
+}
+
+function PlayerLoginForm({ playerCode, password, error, isPending, rememberPlayerId, showPassword, onPlayerCodeChange, onPasswordChange, onRememberChange, onShowPasswordChange, onSubmit }: { playerCode: string; password: string; error: string | null; isPending: boolean; rememberPlayerId: boolean; showPassword: boolean; onPlayerCodeChange: (value: string) => void; onPasswordChange: (value: string) => void; onRememberChange: (value: boolean) => void; onShowPasswordChange: (value: boolean) => void; onSubmit: (event: React.FormEvent) => void }) {
+  return <div className="pt-8 sm:pt-14"><form onSubmit={onSubmit} className="rounded-[2rem] border border-emerald-900/10 bg-white px-6 py-8 text-slate-950 shadow-[0_22px_65px_rgba(42,194,151,.22)] sm:px-9 sm:py-10"><p className="text-xs font-black uppercase tracking-[.32em] text-emerald-700">Golden Money</p><h1 className="mt-3 font-display text-4xl font-black tracking-tight text-[#071a16]">ဝင်ရောက်ရန်</h1><p className="mt-4 text-sm leading-6 text-slate-500">Agent ပေးသော Player ID နှင့် password ဖြင့်လုံခြုံစွာဝင်ပါ။ Account အသစ်အတွက် Agent invitation link လိုအပ်သည်။</p><div className="mt-8 grid gap-5"><div className="grid gap-2"><Label htmlFor="existing-player-code" className="font-bold text-slate-700">Username</Label><Input id="existing-player-code" value={playerCode} onChange={event => onPlayerCodeChange(event.target.value.toUpperCase())} autoComplete="username" placeholder="ဥပမာ — PLAYER225" required className="h-13 rounded-2xl border-slate-200 bg-white px-4 text-base text-slate-950" /></div><div className="grid gap-2"><Label htmlFor="existing-player-password" className="font-bold text-slate-700">Password</Label><div className="relative"><Input id="existing-player-password" type={showPassword ? "text" : "password"} value={password} onChange={event => onPasswordChange(event.target.value)} autoComplete="current-password" required className="h-13 rounded-2xl border-slate-200 bg-white px-4 pr-12 text-base text-slate-950" /><button type="button" aria-label={showPassword ? "Password ဖျောက်ရန်" : "Password ပြရန်"} onClick={() => onShowPasswordChange(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-emerald-700">{showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}</button></div></div></div><label className="mt-6 flex cursor-pointer items-center gap-3 text-sm font-semibold text-emerald-800"><input type="checkbox" checked={rememberPlayerId} onChange={event => onRememberChange(event.target.checked)} className="h-5 w-5 accent-emerald-700" />Player ID ကို ဤစက်တွင် မှတ်ထားရန်</label>{error ? <p role="alert" className="mt-5 rounded-xl border border-red-200 bg-red-50 p-3 text-sm leading-6 text-red-700">{error}</p> : null}<Button type="submit" disabled={isPending} className="mt-7 h-14 w-full rounded-2xl bg-emerald-700 text-lg font-black text-white shadow-[0_12px_22px_rgba(5,150,105,.28)] hover:bg-emerald-800"><KeyRound className="mr-2 h-5 w-5" />{isPending ? "ဝင်ရောက်နေသည်…" : "ဝင်ရောက်မည်"}</Button></form></div>;
+}
+
+function PasswordChangeForm({ newPassword, confirmPassword, error, isPending, onNewPasswordChange, onConfirmPasswordChange, onSubmit }: { newPassword: string; confirmPassword: string; error: string | null; isPending: boolean; onNewPasswordChange: (value: string) => void; onConfirmPasswordChange: (value: string) => void; onSubmit: (event: React.FormEvent) => void }) {
+  return <div className="pt-8 sm:pt-14"><form onSubmit={onSubmit} className="rounded-[2rem] border border-emerald-900/10 bg-white px-6 py-8 text-slate-950 shadow-[0_22px_65px_rgba(42,194,151,.22)] sm:px-9 sm:py-10"><div className="grid h-12 w-12 place-items-center rounded-2xl bg-emerald-100 text-emerald-700"><ShieldCheck className="h-6 w-6" /></div><p className="mt-7 text-xs font-black uppercase tracking-[.28em] text-emerald-700">Secure first login</p><h1 className="mt-3 font-display text-3xl font-black text-[#071a16]">Password အသစ်သတ်မှတ်ရန်</h1><p className="mt-4 text-sm leading-6 text-slate-500">Account လုံခြုံရေးအတွက် Agent ပေးထားသော initial password ကိုဆက်မသုံးပါနှင့်။</p><div className="mt-8 grid gap-5"><div className="grid gap-2"><Label htmlFor="new-player-password" className="font-bold text-slate-700">Password အသစ်</Label><Input id="new-player-password" type="password" value={newPassword} onChange={event => onNewPasswordChange(event.target.value)} autoComplete="new-password" required className="h-13 rounded-2xl border-slate-200 bg-white px-4 text-base text-slate-950" /></div><div className="grid gap-2"><Label htmlFor="confirm-player-password" className="font-bold text-slate-700">Password အသစ်အတည်ပြုရန်</Label><Input id="confirm-player-password" type="password" value={confirmPassword} onChange={event => onConfirmPasswordChange(event.target.value)} autoComplete="new-password" required className="h-13 rounded-2xl border-slate-200 bg-white px-4 text-base text-slate-950" /></div></div>{error ? <p role="alert" className="mt-5 rounded-xl border border-red-200 bg-red-50 p-3 text-sm leading-6 text-red-700">{error}</p> : null}<Button type="submit" disabled={isPending} className="mt-7 h-14 w-full rounded-2xl bg-emerald-700 text-lg font-black text-white hover:bg-emerald-800"><KeyRound className="mr-2 h-5 w-5" />{isPending ? "သိမ်းနေသည်…" : "Password အသစ်သတ်မှတ်မည်"}</Button></form></div>;
+}
+
+function PlayerMobileApp({ profile, view, units, unitsLoading, unitsError, onRetryUnits, onNavigate, onLogout, isLoggingOut }: { profile: { id: number; displayName: string | null; playerCode: string | null; status: "invited" | "active" | "suspended"; mustChangePassword: boolean; activatedAt: Date | null }; view: PlayerView; units: { availableUnits: number; transactions: Array<{ id: number; transactionType: "admin_issue" | "agent_transfer" | "agent_adjustment_credit" | "agent_adjustment_debit"; amount: number; fromOwnerType: "system" | "agent" | "player"; toOwnerType: "agent" | "player"; note: string | null; createdAt: Date }> } | undefined; unitsLoading: boolean; unitsError: string | null; onRetryUnits: () => void; onNavigate: (view: PlayerView) => void; onLogout: () => void; isLoggingOut: boolean }) {
+  const displayName = profile.displayName || profile.playerCode || "SKY1688 Player";
+  const balance = units?.availableUnits ?? 0;
+  const backTitle = view === "profile" ? "Profile" : "Unit လက်ကျန်";
+
+  return <div className="pb-5"><header className="flex items-center justify-between py-2"><div>{view === "home" ? <><p className="text-xs font-black uppercase tracking-[.28em] text-lime-200">Golden Money</p><h1 className="mt-2 font-display text-2xl font-black text-white">မင်္ဂလာပါ {displayName}</h1></> : <button onClick={() => onNavigate("home")} className="inline-flex items-center gap-2 text-base font-bold text-emerald-50/90"><ArrowLeft className="h-5 w-5" />{backTitle}</button>}</div><div className="grid h-10 w-10 place-items-center rounded-2xl border border-lime-200/30 bg-lime-200/10 text-lime-100"><UserRound className="h-5 w-5" /></div></header>{view === "home" ? <PlayerHome displayName={displayName} playerCode={profile.playerCode} balance={balance} onNavigate={onNavigate} /> : null}{view === "profile" ? <PlayerProfile displayName={displayName} playerCode={profile.playerCode} balance={balance} onNavigate={onNavigate} onLogout={onLogout} isLoggingOut={isLoggingOut} /> : null}{view === "units" ? <PlayerUnits balance={balance} units={units} isLoading={unitsLoading} error={unitsError} onRetry={onRetryUnits} /> : null}<BottomNavigation activeView={view} onNavigate={onNavigate} /></div>;
+}
+
+function PlayerHome({ displayName, playerCode, balance, onNavigate }: { displayName: string; playerCode: string | null; balance: number; onNavigate: (view: PlayerView) => void }) {
+  return <><section className="mt-7 overflow-hidden rounded-[2rem] bg-[linear-gradient(135deg,#047857_0%,#059669_52%,#2dd4bf_130%)] p-6 shadow-[0_18px_45px_rgba(5,150,105,.32)]"><div className="flex items-start justify-between gap-4"><div><div className="grid h-12 w-12 place-items-center rounded-2xl border border-white/25 bg-white/10 text-white"><WalletCards className="h-6 w-6" /></div><p className="mt-8 text-xs font-black uppercase tracking-[.28em] text-emerald-50/80">Player Units</p><h2 className="mt-3 text-3xl font-black text-white">{formatUnits(balance)} <span className="text-lg font-bold">Units</span></h2><p className="mt-2 text-sm text-emerald-50/75">Agent မှဖြည့်ပေးထားသော internal Unit လက်ကျန်</p></div><button onClick={() => onNavigate("units")} className="rounded-full bg-white/15 p-2 text-white hover:bg-white/20" aria-label="Unit မှတ်တမ်းဖွင့်ရန်"><ChevronRight className="h-6 w-6" /></button></div></section><section className="mt-5 grid grid-cols-3 gap-3"><QuickAction icon={<WalletCards className="h-5 w-5" />} label="Unit လက်ကျန်" onClick={() => onNavigate("units")} /><QuickAction icon={<History className="h-5 w-5" />} label="မှတ်တမ်း" onClick={() => onNavigate("units")} /><QuickAction icon={<CircleUserRound className="h-5 w-5" />} label="Profile" onClick={() => onNavigate("profile")} /></section><section className="mt-8"><h2 className="text-xl font-black text-lime-100">Player ဝန်ဆောင်မှုများ</h2><div className="mt-4 grid grid-cols-2 gap-3"><ServiceTile icon={<LayoutGrid className="h-7 w-7" />} label="2D / 3D Result" href="/results" /><ServiceTile icon={<NotebookText className="h-7 w-7" />} label="Dream1000" href="/dreams" /><ServiceTile icon={<Gift className="h-7 w-7" />} label="အသိပေးချက်" muted /><ServiceTile icon={<UserRound className="h-7 w-7" />} label="Profile" onClick={() => onNavigate("profile")} /></div></section><section className="mt-7 rounded-2xl border border-lime-200/15 bg-lime-200/10 p-4"><div className="flex gap-3"><ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-lime-200" /><p className="text-sm leading-6 text-emerald-50/80">Player ID <strong className="text-white">{playerCode || "—"}</strong> ဖြင့် ဝင်ရောက်ထားသည်။ Unit ဖြည့်/နှုတ်မှုများကို သက်ဆိုင်ရာ Agent မှသာ စီမံနိုင်သည်။</p></div></section></>;
+}
+
+function QuickAction({ icon, label, onClick }: { icon: React.ReactNode; label: string; onClick: () => void }) {
+  return <button onClick={onClick} className="flex min-h-27 flex-col items-center justify-center gap-3 rounded-2xl border border-lime-200/25 bg-[#0b3a2e] px-2 text-center text-sm font-bold text-lime-50 shadow-[0_10px_25px_rgba(0,0,0,.12)] hover:bg-[#104d3c]"><span className="grid h-11 w-11 place-items-center rounded-full bg-lime-200 text-[#07543e]">{icon}</span>{label}</button>;
+}
+
+function ServiceTile({ icon, label, href, onClick, muted = false }: { icon: React.ReactNode; label: string; href?: string; onClick?: () => void; muted?: boolean }) {
+  const content = <><span className="grid h-12 w-12 place-items-center rounded-2xl border border-lime-200/30 bg-lime-200/10 text-lime-100">{icon}</span><span className="mt-4 text-sm font-bold text-white">{label}</span>{muted ? <span className="mt-1 text-xs text-emerald-50/55">မကြာမီ</span> : null}</>;
+  if (href) return <a href={href} className="flex min-h-35 flex-col items-center rounded-2xl border border-emerald-300/15 bg-white/[.035] p-4 text-center hover:bg-white/[.07]">{content}</a>;
+  return <button onClick={onClick} disabled={muted} className="flex min-h-35 flex-col items-center rounded-2xl border border-emerald-300/15 bg-white/[.035] p-4 text-center enabled:hover:bg-white/[.07] disabled:cursor-default disabled:opacity-60">{content}</button>;
+}
+
+function PlayerProfile({ displayName, playerCode, balance, onNavigate, onLogout, isLoggingOut }: { displayName: string; playerCode: string | null; balance: number; onNavigate: (view: PlayerView) => void; onLogout: () => void; isLoggingOut: boolean }) {
+  return <><section className="mt-7 rounded-[2rem] bg-[linear-gradient(135deg,#047857,#14b8a6)] p-6 shadow-[0_18px_45px_rgba(5,150,105,.3)]"><div className="grid h-16 w-16 place-items-center rounded-3xl border border-white/25 bg-white/10 text-white"><UserRound className="h-9 w-9" /></div><h2 className="mt-7 text-3xl font-black text-white">{displayName}</h2><p className="mt-2 text-emerald-50/75">Player account · အသုံးပြုနေသည်</p></section><section className="mt-5 rounded-[2rem] bg-white p-5 text-slate-950 shadow-[0_16px_40px_rgba(15,118,110,.13)]"><div className="flex items-center justify-between"><div className="flex items-center gap-3"><div className="grid h-11 w-11 place-items-center rounded-xl bg-emerald-50 text-emerald-700"><WalletCards className="h-5 w-5" /></div><p className="font-bold">Unit လက်ကျန်</p></div><strong className="text-2xl font-black text-emerald-700">{formatUnits(balance)}</strong></div><div className="mt-5 rounded-2xl bg-emerald-50 p-4 text-sm"><div className="flex items-center justify-between gap-4"><span className="text-slate-500">Player ID</span><strong>{playerCode || "—"}</strong></div><div className="mt-3 flex items-center justify-between gap-4"><span className="text-slate-500">Profile စီမံမှု</span><strong className="text-emerald-700">Agent မှသာ</strong></div></div><Button onClick={() => onNavigate("units")} className="mt-5 h-12 w-full rounded-2xl bg-emerald-700 text-white hover:bg-emerald-800"><WalletCards className="mr-2 h-5 w-5" />Unit မှတ်တမ်းကြည့်ရန်</Button></section><button onClick={() => onNavigate("home")} className="mt-5 flex h-13 w-full items-center justify-center rounded-2xl border border-emerald-500/35 bg-white/80 font-bold text-emerald-800 hover:bg-white"><House className="mr-2 h-5 w-5" />Player Home သို့ပြန်ရန်</button><button onClick={onLogout} disabled={isLoggingOut} className="mt-4 flex h-13 w-full items-center justify-center rounded-2xl border border-red-200 bg-white/80 font-bold text-red-600 hover:bg-red-50"><LogOut className="mr-2 h-5 w-5" />{isLoggingOut ? "ထွက်နေသည်…" : "ထွက်ရန်"}</button><p className="mt-5 text-sm leading-6 text-emerald-50/65">လုံခြုံရေးအတွက် profile အသေးစိတ်နှင့် bank information ကို Agent ကသာပြင်ဆင်နိုင်သည်။</p></>;
+}
+
+function PlayerUnits({ balance, units, isLoading, error, onRetry }: { balance: number; units: { availableUnits: number; transactions: Array<{ id: number; transactionType: "admin_issue" | "agent_transfer" | "agent_adjustment_credit" | "agent_adjustment_debit"; amount: number; fromOwnerType: "system" | "agent" | "player"; toOwnerType: "agent" | "player"; note: string | null; createdAt: Date }> } | undefined; isLoading: boolean; error: string | null; onRetry: () => void }) {
+  return <><section className="mt-7 rounded-[2rem] bg-[linear-gradient(135deg,#047857,#14b8a6)] p-6 shadow-[0_18px_45px_rgba(5,150,105,.3)]"><div className="grid h-12 w-12 place-items-center rounded-2xl border border-white/25 bg-white/10 text-white"><WalletCards className="h-6 w-6" /></div><p className="mt-7 text-xs font-black uppercase tracking-[.28em] text-emerald-50/80">Internal Unit balance</p><h2 className="mt-2 text-4xl font-black text-white">{formatUnits(balance)} <span className="text-lg">Units</span></h2><p className="mt-3 text-sm text-emerald-50/80">Auto refresh · read-only Player view</p></section><section className="mt-5 rounded-[2rem] bg-white p-5 text-slate-950 shadow-[0_16px_40px_rgba(15,118,110,.13)]"><div className="flex items-center justify-between"><div><h2 className="text-lg font-black">နောက်ဆုံး Unit မှတ်တမ်း</h2><p className="mt-1 text-sm text-slate-500">Agent မှပြုလုပ်သော internal ledger entries</p></div><button onClick={onRetry} className="rounded-xl bg-emerald-50 p-2 text-emerald-700 hover:bg-emerald-100" aria-label="Unit data ပြန်တင်ရန်"><RefreshCw className="h-5 w-5" /></button></div>{isLoading ? <p className="py-10 text-center text-sm text-slate-500">Unit data စစ်ဆေးနေသည်…</p> : error ? <div className="py-7 text-center"><p className="text-sm text-red-600">{error}</p><Button onClick={onRetry} variant="outline" className="mt-4 border-emerald-200 text-emerald-800">ပြန်စမ်းရန်</Button></div> : !units?.transactions.length ? <div className="py-10 text-center"><History className="mx-auto h-8 w-8 text-emerald-300" /><p className="mt-4 text-sm text-slate-500">Unit ledger မှတ်တမ်းမရှိသေးပါ။</p></div> : <div className="mt-5 divide-y divide-slate-100">{units.transactions.map(item => <div key={item.id} className="flex items-center justify-between gap-4 py-4"><div className="min-w-0"><p className="truncate font-bold">{formatTransactionType(item.transactionType)}</p><p className="mt-1 truncate text-xs text-slate-500">{item.note || "Agent ledger update"} · {new Date(item.createdAt).toLocaleString()}</p></div><strong className={item.transactionType === "agent_adjustment_debit" ? "shrink-0 text-red-600" : "shrink-0 text-emerald-700"}>{formatTransactionDirection(item.transactionType)}{formatUnits(item.amount)}</strong></div>)}</div>}</section><p className="mt-5 text-center text-xs leading-5 text-emerald-50/60">ဤစာမျက်နှာသည် internal Unit balance ကိုသာပြသသည်။ Deposit၊ withdrawal၊ payment သို့မဟုတ် wallet transaction မပါဝင်ပါ။</p></>;
+}
+
+function BottomNavigation({ activeView, onNavigate }: { activeView: PlayerView; onNavigate: (view: PlayerView) => void }) {
+  return <nav aria-label="Player bottom navigation" className="fixed bottom-4 left-1/2 z-30 flex w-[calc(100%-2rem)] max-w-md -translate-x-1/2 items-center justify-around rounded-full border border-lime-200/35 bg-[#07543e]/95 px-2 py-2 shadow-[0_16px_35px_rgba(0,0,0,.3)] backdrop-blur"><NavButton label="ပင်မ" active={activeView === "home"} onClick={() => onNavigate("home")} icon={<House className="h-5 w-5" />} /><NavButton label="Result" onClick={() => window.location.assign("/results")} icon={<LayoutGrid className="h-5 w-5" />} /><NavButton label="Unit" active={activeView === "units"} onClick={() => onNavigate("units")} icon={<WalletCards className="h-5 w-5" />} /><NavButton label="Profile" active={activeView === "profile"} onClick={() => onNavigate("profile")} icon={<UserRound className="h-5 w-5" />} /></nav>;
+}
+
+function NavButton({ label, icon, active = false, onClick }: { label: string; icon: React.ReactNode; active?: boolean; onClick: () => void }) {
+  return <button onClick={onClick} className={`flex min-w-15 flex-col items-center gap-1 rounded-full px-3 py-2 text-xs font-bold ${active ? "bg-lime-200 text-[#07543e]" : "text-emerald-50/80 hover:bg-white/10 hover:text-white"}`}>{icon}<span>{label}</span></button>;
+}
+
+function LoadingPanel() { return <div className="grid min-h-100 place-items-center"><RefreshCw className="h-8 w-8 animate-spin text-lime-200" /></div>; }
+
+function ErrorPanel({ label, onRetry }: { label: string; onRetry: () => void }) { return <div className="mt-12 rounded-3xl border border-red-200/25 bg-red-950/20 p-6 text-center"><p className="text-sm leading-6 text-red-100">{label}</p><Button onClick={onRetry} className="mt-5 bg-lime-200 text-[#09221c] hover:bg-lime-100">ပြန်စမ်းရန်</Button></div>; }

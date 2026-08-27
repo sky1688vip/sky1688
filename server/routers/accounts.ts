@@ -1,5 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import * as db from "../db";
+import { toPlayerSessionProfile } from "../playerProfilePrivacy";
 import {
   agentCredentialLoginSchema,
   agentCredentialResetSchema,
@@ -10,6 +11,8 @@ import {
   playerInviteActivateSchema,
   playerInviteCreateSchema,
   playerInviteRevokeSchema,
+  playerAccountStatusSchema,
+  playerCredentialResetSchema,
   playerPasswordChangeSchema,
 } from "../accountSchemas";
 import { AGENT_SESSION_COOKIE, createAgentSession } from "../agentSession";
@@ -29,10 +32,14 @@ function requireRole(role: "agent" | "user", actualRole: "admin" | "agent" | "us
 export const accountRouter = router({
   player: router({
     session: publicProcedure.query(async ({ ctx }) => {
-      return ctx.player ? db.getPlayerProfileById(ctx.player.id) : null;
+      if (!ctx.player) return null;
+      const profile = await db.getPlayerProfileById(ctx.player.id);
+      return profile ? toPlayerSessionProfile(profile) : null;
     }),
     me: playerProcedure.query(async ({ ctx }) => {
-      return db.getPlayerProfileById(ctx.player.id);
+      const profile = await db.getPlayerProfileById(ctx.player.id);
+      if (!profile || profile.status !== "active") throw new TRPCError({ code: "FORBIDDEN", message: "Player account is unavailable." });
+      return toPlayerSessionProfile(profile);
     }),
     activate: publicProcedure.input(playerInviteActivateSchema).mutation(async ({ ctx, input }) => {
       try {
@@ -103,6 +110,11 @@ export const accountRouter = router({
         });
       }
     }),
+    exitCredentialMode: protectedProcedure.mutation(({ ctx }) => {
+      requireRole("agent", ctx.user.role);
+      ctx.res.cookie(AGENT_SESSION_COOKIE, "", { ...getSessionCookieOptions(ctx.req), maxAge: 0 });
+      return { success: true as const };
+    }),
     playerInvites: router({
       list: protectedProcedure.query(async ({ ctx }) => {
         requireRole("agent", ctx.user.role);
@@ -122,6 +134,21 @@ export const accountRouter = router({
       revoke: protectedProcedure.input(playerInviteRevokeSchema).mutation(async ({ ctx, input }) => {
         requireRole("agent", ctx.user.role);
         return db.revokePlayerInvitation(ctx.user.id, input.id);
+      }),
+      setStatus: protectedProcedure.input(playerAccountStatusSchema).mutation(async ({ ctx, input }) => {
+        requireRole("agent", ctx.user.role);
+        try {
+          return await db.setOwnedPlayerAccountStatus(ctx.user.id, input);
+        } catch (error) {
+          if ((error as Error).message === "PLAYER_STATUS_CHANGE_UNAVAILABLE") {
+            throw new TRPCError({ code: "BAD_REQUEST", message: "Only an activated Player can be suspended or reactivated." });
+          }
+          throw error;
+        }
+      }),
+      resetCredentials: protectedProcedure.input(playerCredentialResetSchema).mutation(async ({ ctx, input }) => {
+        requireRole("agent", ctx.user.role);
+        return db.resetOwnedPlayerCredentials(ctx.user.id, input);
       }),
     }),
   }),

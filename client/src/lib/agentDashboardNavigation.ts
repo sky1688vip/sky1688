@@ -43,7 +43,7 @@ export const agentDashboardNavigationGroups: AgentDashboardNavigationGroup[] = [
   {
     label: "Cash In / Cash Out",
     items: [
-      { id: "cashInOut", label: "Cash In / Cash Out", active: false },
+      { id: "cashInOut", label: "Unit ဖြည့်ရန်", active: true },
       { id: "autoDepositList", label: "Auto Deposit list", active: false },
       { id: "createDeposit", label: "Create Deposit", active: false },
       { id: "autoWithdrawList", label: "Auto Withdraw list", active: false },

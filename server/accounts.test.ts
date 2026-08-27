@@ -3,7 +3,9 @@ import {
   agentCredentialLoginSchema,
   agentCreateSchema,
   agentPasswordChangeSchema,
+  playerAccountStatusSchema,
   playerCredentialLoginSchema,
+  playerCredentialResetSchema,
   playerInviteActivateSchema,
   playerInviteCreateSchema,
 } from "./accountSchemas";
@@ -20,10 +22,13 @@ const dbMocks = vi.hoisted(() => ({
   createPlayerInvitation: vi.fn(),
   listPlayerInvitationsForAgent: vi.fn(),
   revokePlayerInvitation: vi.fn(),
-  activatePlayerInvitation: vi.fn(),
-  authenticatePlayerCredentials: vi.fn(),
-  changePlayerPassword: vi.fn(),
-  getPlayerProfileById: vi.fn(),
+  setOwnedPlayerAccountStatus: vi.fn(),
+  resetOwnedPlayerCredentials: vi.fn(),
+    activatePlayerInvitation: vi.fn(),
+    authenticatePlayerCredentials: vi.fn(),
+    changePlayerPassword: vi.fn(),
+    getPlayerProfileById: vi.fn(),
+    getPlayerUnitOverview: vi.fn(),
 }));
 
 const sessionMocks = vi.hoisted(() => ({ createAgentSession: vi.fn(), createPlayerSession: vi.fn() }));
@@ -123,6 +128,12 @@ describe("Agent-issued Player credential boundaries", () => {
     expect(cookie).toHaveBeenCalledWith("sky1688_agent_session", "signed-agent-session", expect.objectContaining({ httpOnly: true }));
   });
 
+  it("clears only the Agent credential cookie when returning to Administrator mode", async () => {
+    const { ctx, cookie } = contextFactory("agent");
+    await expect(appRouter.createCaller(ctx).accounts.agent.exitCredentialMode()).resolves.toEqual({ success: true });
+    expect(cookie).toHaveBeenCalledWith("sky1688_agent_session", "", expect.objectContaining({ httpOnly: true, maxAge: 0 }));
+  });
+
   it("allows only an authenticated Agent to issue, list, and revoke Player credentials", async () => {
     const issue = { success: true, token: "x".repeat(40), playerCode: "PL-ABC12345", temporaryPassword: "p".repeat(24), expiresAt: new Date() };
     dbMocks.createPlayerInvitation.mockResolvedValue(issue);
@@ -141,6 +152,20 @@ describe("Agent-issued Player credential boundaries", () => {
     await expect(agentCaller.accounts.agent.playerInvites.revoke({ id: 12 })).resolves.toEqual({ success: true });
     const { ctx: plainUserCtx } = contextFactory("user");
     await expect(appRouter.createCaller(plainUserCtx).accounts.agent.playerInvites.create(playerCreateInput)).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+
+  it("allows an Agent to manage only owned Player status and reset credentials without exposing an old password", async () => {
+    dbMocks.setOwnedPlayerAccountStatus.mockResolvedValue({ success: true, playerProfileId: 9, status: "suspended" });
+    dbMocks.resetOwnedPlayerCredentials.mockResolvedValue({ success: true, playerProfileId: 9, playerCode: "PL-ABC12345", temporaryPassword: "new-one-time-password", temporaryPasswordExpiresAt: new Date() });
+    const { ctx: agentCtx } = contextFactory("agent");
+    const caller = appRouter.createCaller(agentCtx);
+    expect(playerAccountStatusSchema.parse({ playerProfileId: 9, action: "suspend" })).toEqual({ playerProfileId: 9, action: "suspend" });
+    expect(playerCredentialResetSchema.safeParse({ playerProfileId: 0 }).success).toBe(false);
+    await expect(caller.accounts.agent.playerInvites.setStatus({ playerProfileId: 9, action: "suspend" })).resolves.toMatchObject({ status: "suspended" });
+    expect(dbMocks.setOwnedPlayerAccountStatus).toHaveBeenCalledWith(2, { playerProfileId: 9, action: "suspend" });
+    await expect(caller.accounts.agent.playerInvites.resetCredentials({ playerProfileId: 9 })).resolves.toMatchObject({ playerCode: "PL-ABC12345", temporaryPassword: "new-one-time-password" });
+    const { ctx: plainUserCtx } = contextFactory("user");
+    await expect(appRouter.createCaller(plainUserCtx).accounts.agent.playerInvites.setStatus({ playerProfileId: 9, action: "suspend" })).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 
   it("requires an Agent link plus issued Player ID and password, then creates only a Player session", async () => {
@@ -165,6 +190,8 @@ describe("Agent-issued Player credential boundaries", () => {
     await expect(caller.accounts.player.me()).resolves.toMatchObject({ id: 9, playerCode: "PL-ABC12345" });
     await expect(caller.accounts.player.changePassword({ newPassword: "strong-player-password" })).resolves.toEqual({ success: true });
     await expect(caller.accounts.player.session()).resolves.toMatchObject({ id: 9 });
+    await expect(caller.accounts.player.session()).resolves.not.toHaveProperty("passwordHash");
+    await expect(caller.accounts.player.session()).resolves.not.toHaveProperty("passwordSalt");
     const { ctx: agentCtx } = contextFactory("agent");
     await expect(appRouter.createCaller(agentCtx).accounts.player.me()).rejects.toMatchObject({ code: "UNAUTHORIZED" });
   });

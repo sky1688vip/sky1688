@@ -57,3 +57,15 @@
 - [x] Add clear duplicate Player ID handling for manual Agent-created Player accounts.
 - [x] Add an automated test proving Agent invitation/list responses exclude all bank account number fields while returning allowed Player profile fields.
 - [x] Browser-test the Agent Create user form with an authorized Agent session, including required fields, credential reveal, and created Player list rendering without entering real customer bank information; revoke the non-personal test invitation afterward.
+- [x] Add an auditable internal Unit ledger in which Administrators issue Units to active Agents and Agents transfer only available Units to their own active Players, with balance, authorization, insufficient-balance, and transaction-history controls.
+- [x] Confirm the deployed `/agent` and `/admin/agents` pages load the new Unit controls rather than the previous planned-state menu.
+- [x] Browser-test one authorized Admin-to-Agent Unit issue, confirm the Agent balance and immutable ledger row, and record the exact amount before submission (100,000 Unit to Agent tun654222).
+- [ ] Browser-test an authorized Agent-to-own-active-Player Unit transfer and insufficient-balance rejection, then confirm both balances and ledger history update.
+- [x] Diagnose why the current Manus browser account lacks SKY1688 Administrator access and restore access only for the authorized project owner after explicit confirmation of the target account.
+- [x] Fix Agent credential login so `/agent/login` shows and accepts Agent ID/password even when the same browser has an authenticated Administrator Manus session, then browser-verify both role paths.
+- [x] Browser-submit valid Agent ID/password while an Administrator Manus session exists and confirm Agent credential entry succeeds without disrupting the separate Admin session.
+- [x] Browser-verify `/admin/agents` remains accessible after the Agent credential login coexistence check.
+- [ ] Extend the Agent Player list with Player Unit balances, owned-Player enable or suspend controls, temporary-password reset, and auditable internal Unit credit or debit controls without revealing existing passwords.
+- [x] Finish the dedicated Agent credential-session exit interface and browser-verify it clears only the Agent session before returning to the authenticated Administrator Manus session.
+- [ ] Diagnose and fix the live Player credential login failure while preserving Agent-issued invitation, one-time password-change, and session security safeguards.
+- [x] Redesign the Player login, authenticated home, profile, and internal Unit balance views as a mobile-first experience informed by the supplied references, without adding external wallet, payment, cash-in/out, or wagering functions.

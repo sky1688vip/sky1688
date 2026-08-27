@@ -1,0 +1,1 @@
+ALTER TABLE `unit_transactions` MODIFY COLUMN `fromOwnerType` enum('system','agent','player') NOT NULL;

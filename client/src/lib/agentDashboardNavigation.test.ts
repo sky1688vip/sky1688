@@ -8,8 +8,8 @@ describe("agentDashboardNavigation", () => {
     ]);
   });
 
-  it("keeps only existing Player-account operations active", () => {
-    expect(agentDashboardNavigationItems.filter(item => item.active).map(item => item.id)).toEqual(["dashboard", "playerList", "createPlayer"]);
+  it("keeps Player-account operations and the role-scoped Unit transfer active", () => {
+    expect(agentDashboardNavigationItems.filter(item => item.active).map(item => item.id)).toEqual(["dashboard", "playerList", "createPlayer", "cashInOut"]);
     expect(getAgentDashboardNavigationItem("createWithdraw")).toMatchObject({ label: "Create Withdraw", active: false });
   });
 });

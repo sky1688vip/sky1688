@@ -39,10 +39,14 @@ export function getSessionCookieOptions(
   //       ? hostname
   //       : undefined;
 
+  const secure = isSecureRequest(req);
   return {
     httpOnly: true,
     path: "/",
-    sameSite: "none",
-    secure: isSecureRequest(req),
+    // Browsers reject SameSite=None without Secure. When a trusted proxy has
+    // not forwarded the original HTTPS protocol, fall back to same-site Lax
+    // rather than silently dropping an Agent or Player credential cookie.
+    sameSite: secure ? "none" : "lax",
+    secure,
   };
 }

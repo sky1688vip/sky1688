@@ -1,4 +1,4 @@
-import { and, count, desc, eq, like, or } from "drizzle-orm";
+import { and, count, desc, eq, like, or, sql } from "drizzle-orm";
 import { createCipheriv, createHash, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
@@ -7,8 +7,11 @@ import {
   dreamEntries,
   InsertUser,
   lotteryResults,
+  playerAccountEvents,
   playerInvitations,
   playerProfiles,
+  unitBalances,
+  unitTransactions,
   users,
 } from "../drizzle/schema";
 import type {
@@ -17,7 +20,7 @@ import type {
   ResultCreateInput,
   ResultUpdateInput,
 } from "./contentSchemas";
-import type { AgentCreateInput, PlayerInviteCreateInput } from "./accountSchemas";
+import type { AdminUnitIssueInput, AgentCreateInput, AgentPlayerUnitAdjustmentInput, AgentPlayerUnitTransferInput, PlayerAccountStatusInput, PlayerCredentialResetInput, PlayerInviteCreateInput } from "./accountSchemas";
 import { ENV } from "./_core/env";
 import { toAgentVisiblePlayerInvitation } from "./playerProfilePrivacy";
 
@@ -548,14 +551,18 @@ export async function listPlayerInvitationsForAgent(agentUserId: number) {
       expiresAt: playerInvitations.expiresAt,
       redeemedAt: playerInvitations.redeemedAt,
       createdAt: playerInvitations.createdAt,
+      playerProfileId: playerProfiles.id,
       playerCode: playerProfiles.playerCode,
       phone: playerProfiles.phone,
       bankAccountName: playerProfiles.bankAccountName,
       bankType: playerProfiles.bankType,
       streamerAccount: playerProfiles.streamerAccount,
+      playerStatus: playerProfiles.status,
+      availableUnits: unitBalances.availableUnits,
     })
     .from(playerInvitations)
     .leftJoin(playerProfiles, eq(playerInvitations.playerProfileId, playerProfiles.id))
+    .leftJoin(unitBalances, and(eq(unitBalances.ownerType, "player"), eq(unitBalances.ownerId, playerProfiles.id)))
     .where(eq(playerInvitations.agentId, agent.id))
     .orderBy(desc(playerInvitations.createdAt), desc(playerInvitations.id));
   return rows.map(toAgentVisiblePlayerInvitation);
@@ -582,6 +589,65 @@ export async function revokePlayerInvitation(agentUserId: number, invitationId: 
     }
   });
   return { success: true as const };
+}
+
+async function getOwnedPlayerForAgent(agentId: number, playerProfileId: number) {
+  const db = await requireDb();
+  const rows = await db
+    .select()
+    .from(playerProfiles)
+    .where(and(eq(playerProfiles.id, playerProfileId), eq(playerProfiles.agentId, agentId)))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+export async function setOwnedPlayerAccountStatus(agentUserId: number, input: PlayerAccountStatusInput) {
+  const db = await requireDb();
+  const agent = await requireActiveAgentForUser(agentUserId);
+  const profile = await getOwnedPlayerForAgent(agent.id, input.playerProfileId);
+  if (!profile) throw new Error("PLAYER_ACCOUNT_UNAVAILABLE");
+  const isSuspend = input.action === "suspend";
+  if (isSuspend && profile.status !== "active") throw new Error("PLAYER_STATUS_CHANGE_UNAVAILABLE");
+  if (!isSuspend && (profile.status !== "suspended" || !profile.activatedAt)) throw new Error("PLAYER_STATUS_CHANGE_UNAVAILABLE");
+  const nextStatus = isSuspend ? "suspended" as const : "active" as const;
+  await db.transaction(async tx => {
+    await tx.update(playerProfiles).set({ status: nextStatus }).where(eq(playerProfiles.id, profile.id));
+    await tx.insert(playerAccountEvents).values({
+      playerProfileId: profile.id,
+      agentId: agent.id,
+      eventType: isSuspend ? "suspended" : "reactivated",
+      performedByUserId: agentUserId,
+    });
+  });
+  return { success: true as const, playerProfileId: profile.id, status: nextStatus };
+}
+
+export async function resetOwnedPlayerCredentials(agentUserId: number, input: PlayerCredentialResetInput) {
+  const db = await requireDb();
+  const agent = await requireActiveAgentForUser(agentUserId);
+  const profile = await getOwnedPlayerForAgent(agent.id, input.playerProfileId);
+  if (!profile || profile.status === "suspended" || !profile.playerCode) throw new Error("PLAYER_ACCOUNT_UNAVAILABLE");
+  const temporaryPassword = createTemporaryPassword();
+  const password = createPasswordHash(temporaryPassword);
+  const temporaryPasswordExpiresAt = new Date(Date.now() + playerTemporaryPasswordLifetimeMs);
+  await db.transaction(async tx => {
+    await tx.update(playerProfiles).set({
+      passwordHash: password.hash,
+      passwordSalt: password.salt,
+      mustChangePassword: true,
+      temporaryPasswordExpiresAt,
+      failedLoginCount: 0,
+      lockedUntil: null,
+      credentialIssuedAt: new Date(),
+    }).where(eq(playerProfiles.id, profile.id));
+    await tx.insert(playerAccountEvents).values({
+      playerProfileId: profile.id,
+      agentId: agent.id,
+      eventType: "password_reset",
+      performedByUserId: agentUserId,
+    });
+  });
+  return { success: true as const, playerProfileId: profile.id, playerCode: profile.playerCode, temporaryPassword, temporaryPasswordExpiresAt };
 }
 
 async function validatePlayerPassword(profile: typeof playerProfiles.$inferSelect, password: string, now: Date) {
@@ -686,4 +752,219 @@ export async function getPlayerProfileById(playerProfileId: number) {
   const db = await requireDb();
   const rows = await db.select().from(playerProfiles).where(eq(playerProfiles.id, playerProfileId)).limit(1);
   return rows[0] ?? null;
+}
+
+/** Read-only, Player-facing view of the internal Unit ledger. */
+export async function getPlayerUnitOverview(playerProfileId: number) {
+  const db = await requireDb();
+  const profile = await getPlayerProfileById(playerProfileId);
+  if (!profile || profile.status !== "active") throw new Error("PLAYER_ACCOUNT_UNAVAILABLE");
+
+  const availableUnits = await readUnitBalance(db, "player", playerProfileId);
+  const transactions = await db
+    .select({
+      id: unitTransactions.id,
+      transactionType: unitTransactions.transactionType,
+      amount: unitTransactions.amount,
+      fromOwnerType: unitTransactions.fromOwnerType,
+      toOwnerType: unitTransactions.toOwnerType,
+      note: unitTransactions.note,
+      createdAt: unitTransactions.createdAt,
+    })
+    .from(unitTransactions)
+    .where(or(
+      and(eq(unitTransactions.fromOwnerType, "player"), eq(unitTransactions.fromOwnerId, playerProfileId)),
+      and(eq(unitTransactions.toOwnerType, "player"), eq(unitTransactions.toOwnerId, playerProfileId)),
+    ))
+    .orderBy(desc(unitTransactions.createdAt), desc(unitTransactions.id))
+    .limit(20);
+
+  return { availableUnits, transactions };
+}
+
+type UnitOwnerType = "agent" | "player";
+
+async function readUnitBalance(db: Awaited<ReturnType<typeof getDb>>, ownerType: UnitOwnerType, ownerId: number) {
+  if (!db) throw new Error("DATABASE_UNAVAILABLE");
+  const rows = await db
+    .select({ availableUnits: unitBalances.availableUnits })
+    .from(unitBalances)
+    .where(and(eq(unitBalances.ownerType, ownerType), eq(unitBalances.ownerId, ownerId)))
+    .limit(1);
+  return rows[0]?.availableUnits ?? 0;
+}
+
+export async function listAdminAgentUnitBalances() {
+  const db = await requireDb();
+  return db
+    .select({
+      id: agents.id,
+      fullName: agents.fullName,
+      agentCode: agents.agentCode,
+      status: agents.status,
+      availableUnits: unitBalances.availableUnits,
+      updatedAt: unitBalances.updatedAt,
+    })
+    .from(agents)
+    .leftJoin(unitBalances, and(eq(unitBalances.ownerType, "agent"), eq(unitBalances.ownerId, agents.id)))
+    .orderBy(desc(agents.updatedAt), desc(agents.id));
+}
+
+export async function listAdminUnitTransactions() {
+  const db = await requireDb();
+  return db.select().from(unitTransactions).orderBy(desc(unitTransactions.createdAt), desc(unitTransactions.id)).limit(50);
+}
+
+export async function issueUnitsToAgent(adminUserId: number, input: AdminUnitIssueInput) {
+  const db = await requireDb();
+  const agentRows = await db.select().from(agents).where(eq(agents.id, input.agentId)).limit(1);
+  const agent = agentRows[0];
+  if (!agent || agent.status !== "active") throw new Error("AGENT_ACCOUNT_UNAVAILABLE");
+
+  return db.transaction(async tx => {
+    await tx
+      .insert(unitBalances)
+      .values({ ownerType: "agent", ownerId: agent.id, availableUnits: input.amount })
+      .onDuplicateKeyUpdate({ set: { availableUnits: sql`${unitBalances.availableUnits} + ${input.amount}` } });
+    await tx.insert(unitTransactions).values({
+      transactionType: "admin_issue",
+      amount: input.amount,
+      fromOwnerType: "system",
+      fromOwnerId: null,
+      toOwnerType: "agent",
+      toOwnerId: agent.id,
+      performedByUserId: adminUserId,
+      note: input.note ?? null,
+    });
+    const balanceRows = await tx
+      .select({ availableUnits: unitBalances.availableUnits })
+      .from(unitBalances)
+      .where(and(eq(unitBalances.ownerType, "agent"), eq(unitBalances.ownerId, agent.id)))
+      .limit(1);
+    const availableUnits = balanceRows[0]?.availableUnits ?? 0;
+    return { success: true as const, agentId: agent.id, availableUnits };
+  });
+}
+
+export async function getAgentUnitOverview(agentUserId: number) {
+  const db = await requireDb();
+  const agent = await requireActiveAgentForUser(agentUserId);
+  const availableUnits = await readUnitBalance(db, "agent", agent.id);
+  const players = await db
+    .select({
+      id: playerProfiles.id,
+      playerCode: playerProfiles.playerCode,
+      phone: playerProfiles.phone,
+      status: playerProfiles.status,
+      availableUnits: unitBalances.availableUnits,
+    })
+    .from(playerProfiles)
+    .leftJoin(unitBalances, and(eq(unitBalances.ownerType, "player"), eq(unitBalances.ownerId, playerProfiles.id)))
+    .where(eq(playerProfiles.agentId, agent.id))
+    .orderBy(desc(playerProfiles.createdAt), desc(playerProfiles.id));
+  const transactions = await db
+    .select()
+    .from(unitTransactions)
+    .where(or(
+      and(eq(unitTransactions.fromOwnerType, "agent"), eq(unitTransactions.fromOwnerId, agent.id)),
+      and(eq(unitTransactions.toOwnerType, "agent"), eq(unitTransactions.toOwnerId, agent.id)),
+    ))
+    .orderBy(desc(unitTransactions.createdAt), desc(unitTransactions.id))
+    .limit(30);
+  return { agentId: agent.id, availableUnits, players, transactions };
+}
+
+export async function transferAgentUnitsToPlayer(agentUserId: number, input: AgentPlayerUnitTransferInput) {
+  const db = await requireDb();
+  const agent = await requireActiveAgentForUser(agentUserId);
+  const players = await db
+    .select()
+    .from(playerProfiles)
+    .where(and(
+      eq(playerProfiles.id, input.playerProfileId),
+      eq(playerProfiles.agentId, agent.id),
+      eq(playerProfiles.status, "active"),
+    ))
+    .limit(1);
+  const player = players[0];
+  if (!player) throw new Error("PLAYER_ACCOUNT_UNAVAILABLE");
+
+  return db.transaction(async tx => {
+    await tx
+      .insert(unitBalances)
+      .values({ ownerType: "agent", ownerId: agent.id, availableUnits: 0 })
+      .onDuplicateKeyUpdate({ set: { ownerId: sql`${unitBalances.ownerId}` } });
+    const result = await tx.execute(sql`
+      UPDATE ${unitBalances}
+      SET ${unitBalances.availableUnits} = ${unitBalances.availableUnits} - ${input.amount}
+      WHERE ${unitBalances.ownerType} = 'agent'
+        AND ${unitBalances.ownerId} = ${agent.id}
+        AND ${unitBalances.availableUnits} >= ${input.amount}
+    `);
+    const affectedRows = Number((result as unknown as [{ affectedRows?: number }])[0]?.affectedRows ?? 0);
+    if (affectedRows !== 1) throw new Error("AGENT_UNIT_BALANCE_INSUFFICIENT");
+    await tx
+      .insert(unitBalances)
+      .values({ ownerType: "player", ownerId: player.id, availableUnits: input.amount })
+      .onDuplicateKeyUpdate({ set: { availableUnits: sql`${unitBalances.availableUnits} + ${input.amount}` } });
+    await tx.insert(unitTransactions).values({
+      transactionType: "agent_transfer",
+      amount: input.amount,
+      fromOwnerType: "agent",
+      fromOwnerId: agent.id,
+      toOwnerType: "player",
+      toOwnerId: player.id,
+      performedByUserId: agentUserId,
+      note: input.note ?? null,
+    });
+    const agentBalanceRows = await tx
+      .select({ availableUnits: unitBalances.availableUnits })
+      .from(unitBalances)
+      .where(and(eq(unitBalances.ownerType, "agent"), eq(unitBalances.ownerId, agent.id)))
+      .limit(1);
+    const playerBalanceRows = await tx
+      .select({ availableUnits: unitBalances.availableUnits })
+      .from(unitBalances)
+      .where(and(eq(unitBalances.ownerType, "player"), eq(unitBalances.ownerId, player.id)))
+      .limit(1);
+    const agentAvailableUnits = agentBalanceRows[0]?.availableUnits ?? 0;
+    const playerAvailableUnits = playerBalanceRows[0]?.availableUnits ?? 0;
+    return { success: true as const, playerProfileId: player.id, agentAvailableUnits, playerAvailableUnits };
+  });
+}
+
+export async function adjustOwnedPlayerUnits(agentUserId: number, input: AgentPlayerUnitAdjustmentInput) {
+  const db = await requireDb();
+  const agent = await requireActiveAgentForUser(agentUserId);
+  const player = await getOwnedPlayerForAgent(agent.id, input.playerProfileId);
+  if (!player || player.status !== "active") throw new Error("PLAYER_ACCOUNT_UNAVAILABLE");
+
+  return db.transaction(async tx => {
+    await tx.insert(unitBalances).values({ ownerType: "agent", ownerId: agent.id, availableUnits: 0 }).onDuplicateKeyUpdate({ set: { ownerId: sql`${unitBalances.ownerId}` } });
+    await tx.insert(unitBalances).values({ ownerType: "player", ownerId: player.id, availableUnits: 0 }).onDuplicateKeyUpdate({ set: { ownerId: sql`${unitBalances.ownerId}` } });
+    if (input.direction === "credit") {
+      const result = await tx.execute(sql`
+        UPDATE ${unitBalances} SET ${unitBalances.availableUnits} = ${unitBalances.availableUnits} - ${input.amount}
+        WHERE ${unitBalances.ownerType} = 'agent' AND ${unitBalances.ownerId} = ${agent.id}
+          AND ${unitBalances.availableUnits} >= ${input.amount}
+      `);
+      const affectedRows = Number((result as unknown as [{ affectedRows?: number }])[0]?.affectedRows ?? 0);
+      if (affectedRows !== 1) throw new Error("AGENT_UNIT_BALANCE_INSUFFICIENT");
+      await tx.update(unitBalances).set({ availableUnits: sql`${unitBalances.availableUnits} + ${input.amount}` }).where(and(eq(unitBalances.ownerType, "player"), eq(unitBalances.ownerId, player.id)));
+      await tx.insert(unitTransactions).values({ transactionType: "agent_adjustment_credit", amount: input.amount, fromOwnerType: "agent", fromOwnerId: agent.id, toOwnerType: "player", toOwnerId: player.id, performedByUserId: agentUserId, note: input.note });
+    } else {
+      const result = await tx.execute(sql`
+        UPDATE ${unitBalances} SET ${unitBalances.availableUnits} = ${unitBalances.availableUnits} - ${input.amount}
+        WHERE ${unitBalances.ownerType} = 'player' AND ${unitBalances.ownerId} = ${player.id}
+          AND ${unitBalances.availableUnits} >= ${input.amount}
+      `);
+      const affectedRows = Number((result as unknown as [{ affectedRows?: number }])[0]?.affectedRows ?? 0);
+      if (affectedRows !== 1) throw new Error("PLAYER_UNIT_BALANCE_INSUFFICIENT");
+      await tx.update(unitBalances).set({ availableUnits: sql`${unitBalances.availableUnits} + ${input.amount}` }).where(and(eq(unitBalances.ownerType, "agent"), eq(unitBalances.ownerId, agent.id)));
+      await tx.insert(unitTransactions).values({ transactionType: "agent_adjustment_debit", amount: input.amount, fromOwnerType: "player", fromOwnerId: player.id, toOwnerType: "agent", toOwnerId: agent.id, performedByUserId: agentUserId, note: input.note });
+    }
+    const agentBalanceRows = await tx.select({ availableUnits: unitBalances.availableUnits }).from(unitBalances).where(and(eq(unitBalances.ownerType, "agent"), eq(unitBalances.ownerId, agent.id))).limit(1);
+    const playerBalanceRows = await tx.select({ availableUnits: unitBalances.availableUnits }).from(unitBalances).where(and(eq(unitBalances.ownerType, "player"), eq(unitBalances.ownerId, player.id))).limit(1);
+    return { success: true as const, direction: input.direction, playerProfileId: player.id, agentAvailableUnits: agentBalanceRows[0]?.availableUnits ?? 0, playerAvailableUnits: playerBalanceRows[0]?.availableUnits ?? 0 };
+  });
 }
