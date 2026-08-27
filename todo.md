@@ -74,3 +74,4 @@
 - [ ] Browser-verify Agent Player list actions on an active owned Player: confirm suspend/reactivate, one-time password reset, and reason-required Unit credit/debit work and are audited without exposing existing passwords.
 - [ ] Browser-test returning Player credential login after first password change, confirming that a normal sign-in reaches Player Home with the new password.
 - [x] Browser-validate the full authenticated Player Home reference hierarchy and confirm all non-approved financial actions remain inactive or absent across shortcut tiles and bottom navigation.
+- [x] Remove public navigation links and the Administrator entry from the unauthenticated Player login screen; keep Player-specific navigation available only after a valid Player session exists.

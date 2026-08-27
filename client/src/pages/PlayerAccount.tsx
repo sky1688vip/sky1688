@@ -96,12 +96,12 @@ export default function PlayerAccount() {
     changePassword.mutate({ newPassword });
   };
 
-  if (session.isLoading) return <PublicShell><PlayerShell><LoadingPanel /></PlayerShell></PublicShell>;
-  if (session.isError) return <PublicShell><PlayerShell><ErrorPanel label={humanizeError(session.error)} onRetry={() => session.refetch()} /></PlayerShell></PublicShell>;
-  if (!profile) return <PublicShell><PlayerShell>{loginCompleted ? <PlayerLoginComplete onContinue={() => window.location.assign("/player")} /> : <PlayerLoginForm playerCode={playerCode} password={password} error={error} isPending={login.isPending} rememberPlayerId={rememberPlayerId} showPassword={showPassword} onPlayerCodeChange={setPlayerCode} onPasswordChange={setPassword} onRememberChange={setRememberPlayerId} onShowPasswordChange={setShowPassword} onSubmit={submitLogin} />}</PlayerShell></PublicShell>;
-  if (profile.mustChangePassword) return <PublicShell><PlayerShell><PasswordChangeForm newPassword={newPassword} confirmPassword={confirmPassword} error={error} isPending={changePassword.isPending} onNewPasswordChange={setNewPassword} onConfirmPasswordChange={setConfirmPassword} onSubmit={submitPasswordChange} /></PlayerShell></PublicShell>;
+  if (session.isLoading) return <PublicShell variant="player"><PlayerShell><LoadingPanel /></PlayerShell></PublicShell>;
+  if (session.isError) return <PublicShell variant="player"><PlayerShell><ErrorPanel label={humanizeError(session.error)} onRetry={() => session.refetch()} /></PlayerShell></PublicShell>;
+  if (!profile) return <PublicShell variant="player"><PlayerShell>{loginCompleted ? <PlayerLoginComplete onContinue={() => window.location.assign("/player")} /> : <PlayerLoginForm playerCode={playerCode} password={password} error={error} isPending={login.isPending} rememberPlayerId={rememberPlayerId} showPassword={showPassword} onPlayerCodeChange={setPlayerCode} onPasswordChange={setPassword} onRememberChange={setRememberPlayerId} onShowPasswordChange={setShowPassword} onSubmit={submitLogin} />}</PlayerShell></PublicShell>;
+  if (profile.mustChangePassword) return <PublicShell variant="player"><PlayerShell><PasswordChangeForm newPassword={newPassword} confirmPassword={confirmPassword} error={error} isPending={changePassword.isPending} onNewPasswordChange={setNewPassword} onConfirmPasswordChange={setConfirmPassword} onSubmit={submitPasswordChange} /></PlayerShell></PublicShell>;
 
-  return <PublicShell><PlayerShell><PlayerMobileApp profile={profile} view={view} units={unitOverview.data} unitsLoading={unitOverview.isLoading} unitsError={unitOverview.isError ? humanizeError(unitOverview.error) : null} onRetryUnits={() => unitOverview.refetch()} onNavigate={setView} onLogout={() => logout.mutate()} isLoggingOut={logout.isPending} /></PlayerShell></PublicShell>;
+  return <PublicShell variant="player"><PlayerShell><PlayerMobileApp profile={profile} view={view} units={unitOverview.data} unitsLoading={unitOverview.isLoading} unitsError={unitOverview.isError ? humanizeError(unitOverview.error) : null} onRetryUnits={() => unitOverview.refetch()} onNavigate={setView} onLogout={() => logout.mutate()} isLoggingOut={logout.isPending} /></PlayerShell></PublicShell>;
 }
 
 function PlayerShell({ children }: { children: React.ReactNode }) {
